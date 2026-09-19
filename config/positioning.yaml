@@ -1,0 +1,33 @@
+sender:
+  name: "Jayesh Pandey"
+  title: "Founder"
+  company: "Copys"
+  calendly_or_reply_cta: "happy to send a quick example if useful — no pressure either way"
+
+# The compose step gives the LLM this whole list and lets it pick the ONE
+# most relevant proof point per lead, based on the lead's research brief.
+proof_points:
+  - name: "RAG + Open Knowledge Format engine"
+    pitch: >
+      built a production RAG pipeline (LangChain, FAISS) that normalizes messy
+      data into a schema-consistent format, cutting hallucinations 35% and
+      improving retrieval precision 40%
+    best_for: "companies with internal docs/knowledge bases, support or search products, messy unstructured data"
+
+  - name: "Joblet.ai"
+    pitch: >
+      shipped AI-powered matching features (resume-based recommendations, an
+      AI interview assistant) for a job platform used across 100+ countries
+    best_for: "marketplaces, matching/recommendation products, HR tech, consumer platforms"
+
+  - name: "PGAGI production ML microservices"
+    pitch: >
+      deployed ML/GenAI microservices on AWS handling 50K+ daily requests at
+      sub-120ms latency with 99.9% reliability
+    best_for: "companies needing to productionize an ML/AI feature reliably at scale"
+
+  - name: "QHBERT quantum-hybrid model"
+    pitch: >
+      research work compressing a transformer's parameters ~2200x while
+      hitting 98.85% F1 on fake-news detection
+    best_for: "companies interested in model efficiency, compression, or ML research credibility"

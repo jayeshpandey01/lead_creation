@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.env
+client_secret*.json
+*.db
+*.sqlite3

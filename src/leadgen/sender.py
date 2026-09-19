@@ -1,0 +1,101 @@
+import asyncio
+import logging
+import random
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from .db import get_session, init_db
+from .mail_client import send_email
+from .models import Lead, LeadStatus
+from .settings import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _within_sending_window(now: datetime) -> bool:
+    if settings.sending_weekdays_only and now.weekday() >= 5:
+        return False
+    return settings.sending_hour_start <= now.hour < settings.sending_hour_end
+
+
+def _sent_today_count(session) -> int:
+    tz = ZoneInfo(settings.timezone)
+    start_of_day = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    return (
+        session.query(Lead)
+        .filter(Lead.status == LeadStatus.sent, Lead.sent_at >= start_of_day)
+        .count()
+    )
+
+
+def _pick_batch(session, size: int) -> list[Lead]:
+    # Shuffle within a larger pool so send order isn't always oldest-first —
+    # part of not looking like a mechanical queue drain.
+    candidates = (
+        session.query(Lead)
+        .filter(Lead.status == LeadStatus.ready_to_send)
+        .order_by(Lead.discovered_at.asc())
+        .limit(max(size * 3, 1))
+        .all()
+    )
+    random.shuffle(candidates)
+    return candidates[:size]
+
+
+async def _send_one(session, lead: Lead) -> None:
+    try:
+        message_id = await asyncio.to_thread(
+            send_email, lead.email, lead.email_subject, lead.email_body
+        )
+    except Exception:
+        logger.exception("Failed to send to %s, leaving as ready_to_send for retry", lead.email)
+        return
+
+    lead.status = LeadStatus.sent
+    lead.sent_at = datetime.utcnow()
+    lead.message_id = message_id
+    session.add(lead)
+    session.commit()
+    logger.info("Sent to %s (%s)", lead.email, lead.company)
+
+
+async def sender_loop() -> None:
+    init_db()
+    tz = ZoneInfo(settings.timezone)
+
+    while True:
+        now = datetime.now(tz)
+        if not _within_sending_window(now):
+            logger.info("Outside sending window at %s, sleeping 15 min", now.isoformat())
+            await asyncio.sleep(15 * 60)
+            continue
+
+        session = get_session()
+        try:
+            sent_today = _sent_today_count(session)
+            if sent_today >= settings.daily_cap:
+                logger.info("Daily cap (%d) reached, sleeping 30 min", settings.daily_cap)
+                await asyncio.sleep(30 * 60)
+                continue
+
+            batch_size = min(
+                random.randint(settings.batch_min, settings.batch_max),
+                settings.daily_cap - sent_today,
+            )
+            batch = _pick_batch(session, batch_size)
+            if not batch:
+                logger.info("No leads ready to send, sleeping 10 min")
+                await asyncio.sleep(10 * 60)
+                continue
+
+            for i, lead in enumerate(batch):
+                await _send_one(session, lead)
+                if i < len(batch) - 1:
+                    gap = random.uniform(settings.inter_send_min_seconds, settings.inter_send_max_seconds)
+                    await asyncio.sleep(gap)
+        finally:
+            session.close()
+
+        interval = random.uniform(settings.interval_min_seconds, settings.interval_max_seconds)
+        logger.info("Batch done, sleeping %.0fs until next batch", interval)
+        await asyncio.sleep(interval)
