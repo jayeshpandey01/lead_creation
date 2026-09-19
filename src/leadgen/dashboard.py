@@ -2,16 +2,19 @@
 and runs the sender/poller/pipeline loops in the background on the same
 event loop. Run with: uvicorn leadgen.dashboard:app
 """
+import asyncio
 import html
 import logging
+import secrets
 from collections import Counter
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 
 from .db import get_session, init_db
 from .models import Lead, LeadStatus
-from .worker import start_background_tasks
+from .settings import settings
+from .worker import run_pipeline_once, start_background_tasks
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -24,6 +27,21 @@ _STATUS_ORDER = [s.value for s in LeadStatus]
 async def on_startup() -> None:
     init_db()
     await start_background_tasks()
+
+
+@app.post("/trigger-pipeline")
+async def trigger_pipeline(x_trigger_token: str = Header(default="")) -> dict:
+    """Manual one-off discover -> research -> compose run, for testing
+    without waiting for the daily scheduled run. Requires TRIGGER_TOKEN to
+    be set and matched via the X-Trigger-Token header:
+      curl -X POST https://<your-app>.onrender.com/trigger-pipeline \\
+        -H "X-Trigger-Token: <your token>"
+    """
+    if not settings.trigger_token or not secrets.compare_digest(x_trigger_token, settings.trigger_token):
+        raise HTTPException(status_code=403, detail="Missing or invalid X-Trigger-Token")
+
+    asyncio.create_task(run_pipeline_once())
+    return {"status": "started"}
 
 
 def _row(lead: Lead) -> str:

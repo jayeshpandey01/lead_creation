@@ -13,8 +13,20 @@ from .settings import settings
 logger = logging.getLogger(__name__)
 
 
+async def run_pipeline_once() -> dict:
+    """Runs discover -> research -> compose one time. Shared by the daily
+    scheduled loop and the manual /trigger-pipeline dashboard endpoint."""
+    logger.info("Running discover/research/compose pipeline")
+    inserted = await asyncio.to_thread(run_discovery, settings.discovery_batch_size)
+    researched = await asyncio.to_thread(run_research)
+    composed = await asyncio.to_thread(run_compose)
+    result = {"discovered": inserted, "researched": researched, "composed": composed}
+    logger.info("Pipeline run complete: %s", result)
+    return result
+
+
 async def pipeline_loop() -> None:
-    """Runs discover -> research -> compose once a day, at settings.pipeline_run_hour
+    """Runs run_pipeline_once() once a day, at settings.pipeline_run_hour
     (sender's local time), to refill the ready_to_send queue."""
     tz = ZoneInfo(settings.timezone)
     while True:
@@ -24,17 +36,10 @@ async def pipeline_loop() -> None:
             next_run += timedelta(days=1)
         await asyncio.sleep((next_run - now).total_seconds())
 
-        logger.info("Running daily discover/research/compose pipeline")
         try:
-            inserted = await asyncio.to_thread(run_discovery, settings.discovery_batch_size)
-            researched = await asyncio.to_thread(run_research)
-            composed = await asyncio.to_thread(run_compose)
-            logger.info(
-                "Pipeline run complete: %d discovered, %d researched, %d composed",
-                inserted, researched, composed,
-            )
+            await run_pipeline_once()
         except Exception:
-            logger.exception("Pipeline run failed, will retry tomorrow")
+            logger.exception("Scheduled pipeline run failed, will retry tomorrow")
 
 
 _background_tasks: list[asyncio.Task] = []

@@ -16,6 +16,8 @@ services:
         value: sqlite:////var/data/leadgen.db
       - key: TRAINIQ_API_KEY
         sync: false
+      - key: TRIGGER_TOKEN
+        sync: false
       - key: MAPS_SCRAPER_URL
         fromService:
           name: maps-scraper

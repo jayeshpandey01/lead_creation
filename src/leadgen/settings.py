@@ -67,5 +67,9 @@ class Settings:
     discovery_batch_size: int = field(default_factory=lambda: _int("DISCOVERY_BATCH_SIZE", 10))
     pipeline_run_hour: int = field(default_factory=lambda: _int("PIPELINE_RUN_HOUR", 4))
 
+    # Shared secret for POST /trigger-pipeline (manual test trigger on the
+    # dashboard). Empty by default = endpoint refuses all requests.
+    trigger_token: str = field(default_factory=lambda: os.environ.get("TRIGGER_TOKEN", ""))
+
 
 settings = Settings()
