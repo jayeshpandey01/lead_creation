@@ -28,6 +28,10 @@ class Settings:
     # local SMTP verifier. See discover_maps.py.
     maps_scraper_url: str = field(default_factory=lambda: os.environ.get("MAPS_SCRAPER_URL", "http://localhost:8080"))
     queries_file: str = field(default_factory=lambda: os.environ.get("QUERIES_FILE", "queries.txt"))
+    # If this file exists, it's used instead of calling the live maps-scraper
+    # API — no service to host at all. Same columns as the scraper's own CSV
+    # output: name,website,category,phone,email (email optional).
+    maps_csv_path: str = field(default_factory=lambda: os.environ.get("MAPS_CSV_PATH", "leads_input.csv"))
     generic_email_prefixes: list[str] = field(
         default_factory=lambda: _list("GENERIC_EMAIL_PREFIXES") or ["info", "hello", "contact", "sales", "support"]
     )

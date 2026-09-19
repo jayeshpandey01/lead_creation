@@ -38,15 +38,19 @@ Copy `.env.example` if needed (a starter `.env` is already in this repo) and fil
 - **`DATABASE_URL`** — defaults to `sqlite:///./leadgen.db`, a local file. No
   setup needed; swap it for a Postgres URL later if you ever outgrow SQLite.
 - **`TRAINIQ_API_KEY`** — your `trainiq`/`cmddllm` key.
-- **`MAPS_SCRAPER_URL`** — where the Maps scraper service is reachable.
-  Locally: run it yourself (command in `.env`'s comment) and leave the
-  default `http://localhost:8080`. On Render: auto-filled from the
-  `maps-scraper` service defined in `render.yaml`, nothing to set manually.
-- **`QUERIES_FILE`** — defaults to `queries.txt` in the repo root, one
-  `"<category> in <location>"` search per line. Edit this file directly to
-  change what discovery targets — no redeploy needed for local runs.
+- **`MAPS_CSV_PATH`** — defaults to `leads_input.csv` in the repo root.
+  **This is the easiest way to feed in companies: no hosting needed at all.**
+  Fill it in with rows of `name,website,category,phone,email` (email column
+  can be left blank — a generic address gets resolved+verified from the
+  domain automatically) and it's picked up on the next discovery run.
+- **`MAPS_SCRAPER_URL`** / **`QUERIES_FILE`** — only matter if
+  `leads_input.csv` is empty/missing. This is the fully-automated path: a
+  live `gosom/google-maps-scraper` service (see `render.yaml`) searched with
+  one `"<category> in <location>"` line per line of `QUERIES_FILE`. Requires
+  actually hosting that service somewhere reachable — skip this entirely if
+  the CSV is enough for you.
 - **`GENERIC_EMAIL_PREFIXES`** — tried in order against a company's domain
-  when Maps doesn't list an email directly (e.g. `info`, `hello`, `contact`).
+  when a row doesn't list an email directly (e.g. `info`, `hello`, `contact`).
 - **`SMTP_*`** / **`IMAP_*`** / **`SENDER_*`** — see step 3.
 - Pacing/window/cap values already have sane defaults in `.env.example`.
 
@@ -101,24 +105,31 @@ a batch.
 git init && git add -A && git commit -m "Initial leadgen scaffold"
 ```
 
-Push to a GitHub repo, then in Render: **New → Blueprint**, point it at the
-repo. `render.yaml` now defines **two** services:
-- `leadgen` — the web app (dashboard + background loops), with a disk for
-  the SQLite leads db.
-- `maps-scraper` — the Google Maps scraper, deployed straight from its
-  public Docker image, internal-only (no public URL). `leadgen` reaches it
-  automatically via `MAPS_SCRAPER_URL`, wired through Render's private
-  networking — no manual config for that one.
+**If you're using `leads_input.csv`** (the simple path), you only need the
+`leadgen` web service — deploy it however you like (manually in the Render
+UI, or via Blueprint using just that one service from `render.yaml`). No
+second service, no Docker, nothing else to host.
 
-Fill in the remaining `sync: false` env vars in the Render dashboard
-(they're marked secret, not stored in `render.yaml`). Once deployed, the
-dashboard is at the `leadgen` service's Render URL.
+**If you want the fully-automated live-scraper path instead**, `render.yaml`
+also defines a `maps-scraper` service (Google Maps scraper, deployed from
+its public Docker image, internal-only). Push to a GitHub repo and use
+**New → Blueprint** to deploy both at once — `leadgen` then reaches
+`maps-scraper` automatically via Render's private networking. If you set
+this up manually service-by-service instead, note that Render's internal
+hostname is whatever you actually name the private service (not
+necessarily "maps-scraper") — set `MAPS_SCRAPER_URL=http://<that exact
+name>:10000` on `leadgen` to match.
+
+Either way, fill in the remaining `sync: false` env vars in the Render
+dashboard (they're marked secret, not stored in `render.yaml`). Once
+deployed, the dashboard is at the `leadgen` service's Render URL.
 
 **Note on the `maps-scraper` service config**: I wrote it against the tool's
 documented CLI flags, but couldn't live-verify it on an actual Render deploy
 (no Docker available to test locally). If that service fails to start,
 check its logs against the image's actual `ENTRYPOINT`/`CMD` — the
-`startCommand` in `render.yaml` may need adjusting.
+`startCommand` in `render.yaml` may need adjusting. This whole service is
+optional — skip it if `leads_input.csv` covers your needs.
 
 ## 7. Warm-up and rollout
 

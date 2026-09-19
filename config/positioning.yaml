@@ -20,10 +20,10 @@ proof_points:
       AI interview assistant) for a job platform used across 100+ countries
     best_for: "marketplaces, matching/recommendation products, HR tech, consumer platforms"
 
-  - name: "Copy'S Production ML microservices"
+  - name: "Production ML deployment experience"
     pitch: >
-      deployed ML/GenAI microservices on AWS handling 50K+ daily requests at
-      sub-120ms latency with 99.9% reliability
+      personally built and deployed ML/GenAI microservices on AWS handling
+      50K+ daily requests at sub-120ms latency with 99.9% reliability
     best_for: "companies needing to productionize an ML/AI feature reliably at scale"
 
   - name: "QHBERT quantum-hybrid model"
