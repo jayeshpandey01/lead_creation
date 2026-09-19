@@ -20,7 +20,7 @@ proof_points:
       AI interview assistant) for a job platform used across 100+ countries
     best_for: "marketplaces, matching/recommendation products, HR tech, consumer platforms"
 
-  - name: "PGAGI production ML microservices"
+  - name: "Copy'S Production ML microservices"
     pitch: >
       deployed ML/GenAI microservices on AWS handling 50K+ daily requests at
       sub-120ms latency with 99.9% reliability
