@@ -1,7 +1,7 @@
 services:
   - type: web
     name: leadgen
-    env: python
+    runtime: python
     plan: starter
     buildCommand: pip install -e .
     startCommand: uvicorn leadgen.dashboard:app --host 0.0.0.0 --port $PORT
@@ -14,8 +14,16 @@ services:
     envVars:
       - key: DATABASE_URL
         value: sqlite:////var/data/leadgen.db
-      - key: TRAINIQ_API_KEY
+      - key: LEADS_EXPORT_CSV_PATH
+        value: /var/data/leads_output.csv
+      - key: DASHBOARD_USERNAME
         sync: false
+      - key: DASHBOARD_PASSWORD
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: openai/gpt-4o-mini
       - key: TRIGGER_TOKEN
         sync: false
       - key: MAPS_SCRAPER_URL
@@ -23,26 +31,20 @@ services:
           name: maps-scraper
           type: pserv
           property: hostport
-      - key: APOLLO_API_KEY
+      - key: MAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
         sync: false
-      - key: APOLLO_PERSON_TITLES
+      - key: RESEND_FROM_EMAIL
         sync: false
-      - key: APOLLO_EMPLOYEE_RANGES
-        sync: false
-      - key: APOLLO_PERSON_LOCATIONS
-        sync: false
-      - key: SMTP_FROM_EMAIL
-        sync: false
-      - key: SMTP_HOST
-        value: "smtp.gmail.com"
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USE_TLS
-        value: "True"
-      - key: SMTP_PASSWORD
+      - key: RESEND_REPLY_TO
         sync: false
       - key: IMAP_HOST
         value: "imap.gmail.com"
+      - key: IMAP_USERNAME
+        sync: false
+      - key: IMAP_PASSWORD
+        sync: false
       - key: SENDER_NAME
         sync: false
       - key: SENDER_COMPANY
@@ -51,6 +53,20 @@ services:
         sync: false
       - key: SEND_DAILY_CAP
         value: "15"
+      - key: SEND_BATCH_MIN
+        value: "1"
+      - key: SEND_BATCH_MAX
+        value: "1"
+      - key: SEND_INTERVAL_MIN_SECONDS
+        value: "120"
+      - key: SEND_INTERVAL_MAX_SECONDS
+        value: "180"
+      - key: SENDER_IDLE_POLL_SECONDS
+        value: "60"
+      - key: DISCOVERY_BATCH_SIZE
+        value: "1"
+      - key: PIPELINE_INTERVAL_SECONDS
+        value: "180"
       - key: SENDER_TIMEZONE
         value: "Asia/Kolkata"
 

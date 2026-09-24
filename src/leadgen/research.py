@@ -4,27 +4,21 @@ import requests
 import trafilatura
 
 from .db import get_session
+from .llm_client import chat_completion
 from .models import Lead, LeadStatus
-from .settings import settings
 
 logger = logging.getLogger(__name__)
 
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; LeadResearchBot/1.0)"}
 
 _SUMMARY_SYSTEM_PROMPT = (
-    "You are a B2B sales research assistant. Given raw scraped text about a "
-    "company, produce a concise research brief for a salesperson: 4-6 short "
-    "bullet points covering (1) what the company does, (2) their likely "
-    "pain point relevant to AI/ML, data, or engineering services, and (3) "
-    "one concrete, specific detail from the text that could open a "
-    "personalized email. No preamble, just the bullets."
+    "Extract a concise research brief using only explicit facts in the supplied "
+    "public page text. Never infer a company's pain, plans, customers, tech stack, "
+    "or need for services. Return 1-3 short facts as bullets; each bullet must "
+    "include an exact short quote from the page and its source URL. Do not "
+    "paraphrase the quoted evidence into a stronger claim. If no clear, relevant "
+    "fact is present, return exactly NO_VERIFIED_EVIDENCE."
 )
-
-
-def _get_llm_client():
-    from trainiq import cmddllm
-
-    return cmddllm(api_key=settings.trainiq_api_key)
 
 
 def fetch_website_text(url: str | None, max_chars: int = 6000) -> str:
@@ -58,20 +52,30 @@ def fetch_linkedin_about(url: str | None, max_chars: int = 3000) -> str:
         return ""
 
 
-def summarize(company: str, website_text: str, linkedin_text: str) -> str:
+def summarize(
+    company: str,
+    website_url: str | None,
+    website_text: str,
+    linkedin_url: str | None,
+    linkedin_text: str,
+) -> str:
     if not website_text and not linkedin_text:
-        return f"No public research material found for {company}. Personalize using company name and title only."
+        return "NO_VERIFIED_EVIDENCE"
 
-    raw = f"Company: {company}\n\nWebsite content:\n{website_text}\n\nLinkedIn content:\n{linkedin_text}"
-    client = _get_llm_client()
-    response = client.chat.completions.create(
+    raw = (
+        f"Company name (identifier only): {company}\n\n"
+        f"Website source URL: {website_url or 'not available'}\n"
+        f"Website page text:\n{website_text}\n\n"
+        f"LinkedIn source URL: {linkedin_url or 'not available'}\n"
+        f"Public LinkedIn page text:\n{linkedin_text}"
+    )
+    return chat_completion(
         messages=[
             {"role": "system", "content": _SUMMARY_SYSTEM_PROMPT},
             {"role": "user", "content": raw[:12000]},
         ],
         temperature=0.3,
     )
-    return response.choices[0].message.content.strip()
 
 
 def run_research(limit: int = 50) -> int:
@@ -88,7 +92,13 @@ def run_research(limit: int = 50) -> int:
             website_text = fetch_website_text(lead.website)
             linkedin_text = fetch_linkedin_about(lead.linkedin_url)
             try:
-                lead.research_brief = summarize(lead.company or "", website_text, linkedin_text)
+                lead.research_brief = summarize(
+                    lead.company or "",
+                    lead.website,
+                    website_text,
+                    lead.linkedin_url,
+                    linkedin_text,
+                )
             except Exception:
                 logger.exception("Summarization failed for %s, skipping this cycle", lead.email)
                 continue

@@ -1,28 +1,20 @@
 # leadgen
 
 Automated ICP-based lead discovery, per-lead research, LLM-drafted outreach,
-humanized sending (3–4 emails every 10–15 minutes), and a live status
+paced sending, and a live status
 dashboard — all in one Render web service, backed by a SQLite file (no
 external database to manage).
 
 Pipeline: `discover` (Google Maps search + local SMTP email verify, both
 free/self-hosted — no paid API) → `research` (site/LinkedIn → brief) →
-`compose` (trainiq `cmddllm` → subject/body) → `sender` (paced SMTP sends) →
-`poller` (IMAP reply/bounce/unsubscribe checks). All four run as background
+`compose` (OpenRouter → subject/body) → `sender` (paced Resend or SMTP sends) →
+`poller` (IMAP bounce checks and SMTP reply/unsubscribe checks). All four run as background
 loops inside `dashboard.py`, a small FastAPI app that also serves a status
 page. See `.claude/plans/precious-purring-token.md` for the full design
 rationale.
 
-**Why not Apollo/OpenOutFind/CrossLinked?** All tried and dropped during
-build: Apollo's API turned out to be paid-plan-only (confirmed live — the
-free plan returns a hard 403 on every API endpoint, not just a low credit
-cap). CrossLinked (Google/Bing search-scraping for LinkedIn profiles) was
-live-tested against a real company and came back empty, most likely because
-Google blocks that query pattern from datacenter IPs — which would hit
-Render's servers the same way. What's left is genuinely free and did work in
-testing: `gosom/google-maps-scraper` (a headless-browser Maps scraper, no
-API key, no login) for finding companies, plus a local SMTP-probe verifier
-for resolving/validating an email per company.
+The active discovery path uses `gosom/google-maps-scraper` and does not call
+Apollo. Apollo support code remains outside the active pipeline.
 
 ## 1. Install
 
@@ -37,18 +29,24 @@ Copy `.env.example` if needed (a starter `.env` is already in this repo) and fil
 
 - **`DATABASE_URL`** — defaults to `sqlite:///./leadgen.db`, a local file. No
   setup needed; swap it for a Postgres URL later if you ever outgrow SQLite.
-- **`TRAINIQ_API_KEY`** — your `trainiq`/`cmddllm` key.
+- **`OPENROUTER_API_KEY` / `OPENROUTER_MODEL`** — used for research and drafting.
 - **`MAPS_CSV_PATH`** — defaults to `leads_input.csv` in the repo root.
   **This is the easiest way to feed in companies: no hosting needed at all.**
   Fill it in with rows of `name,website,category,phone,email` (email column
   can be left blank — a generic address gets resolved+verified from the
   domain automatically) and it's picked up on the next discovery run.
+- **`LEADS_EXPORT_CSV_PATH`** — defaults to `leads_output.csv`. This is an
+  output snapshot of leads stored in the database, including research, draft,
+  and send status. It is refreshed after pipeline runs and sender/poller status
+  changes. The input file and output file are separate.
+- **`DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`** — required to view the
+  dashboard or download its CSV at `/leads.csv`. Keep these credentials private.
 - **`MAPS_SCRAPER_URL`** / **`QUERIES_FILE`** — only matter if
   `leads_input.csv` is empty/missing. This is the fully-automated path: a
-  live `gosom/google-maps-scraper` service (see `render.yaml`) searched with
-  one `"<category> in <location>"` line per line of `QUERIES_FILE`. Requires
-  actually hosting that service somewhere reachable — skip this entirely if
-  the CSV is enough for you.
+  `gosom/google-maps-scraper` service searched with one
+  `"<category> in <location>"` line per line of `QUERIES_FILE`. Locally, run
+  `./scripts/run_scraper.sh` (Docker Desktop must be running) to start it at
+  `http://localhost:8080`, matching the default `MAPS_SCRAPER_URL`.
 - **`GENERIC_EMAIL_PREFIXES`** — tried in order against a company's domain
   when a row doesn't list an email directly (e.g. `info`, `hello`, `contact`).
 - **`SMTP_*`** / **`IMAP_*`** / **`SENDER_*`** — see step 3.
@@ -56,48 +54,51 @@ Copy `.env.example` if needed (a starter `.env` is already in this repo) and fil
 
 ## 3. Mailbox setup (one-time)
 
-This uses a Gmail app password for both sending (SMTP) and reply/bounce
-polling (IMAP) — no Google Cloud project needed.
+Resend is the default sender in the Render Blueprint. Verify a sending domain
+in Resend, then set `RESEND_API_KEY` and `RESEND_FROM_EMAIL`. Set
+`RESEND_REPLY_TO` to an inbox that receives replies. SMTP remains available
+locally with `MAIL_PROVIDER=smtp`. To enable bounce polling, configure
+`IMAP_USERNAME` and `IMAP_PASSWORD` for the mailbox receiving delivery notices
+and enable IMAP on that mailbox.
 
-1. Turn on 2-Step Verification on the sending Google account, then create an
-   **App Password** (Google Account → Security → 2-Step Verification → App
-   passwords).
-2. In Gmail settings, make sure **IMAP is enabled** (Settings → Forwarding and
-   POP/IMAP → Enable IMAP) — needed for the reply/bounce poller.
-3. Set `SMTP_FROM_EMAIL` and `SMTP_PASSWORD` (the app password, not your
-   regular Gmail password) in `.env` — `SMTP_HOST`/`PORT`/`IMAP_HOST` already
-   default to Gmail's.
-4. Set `SENDER_NAME`, `SENDER_COMPANY`, `SENDER_ADDRESS` — a real postal
+Set `SENDER_NAME`, `SENDER_COMPANY`, `SENDER_ADDRESS` — a real postal
    address is required in the footer (CAN-SPAM applies to B2B cold email too).
 
 ## 4. Edit positioning
 
-`config/positioning.yaml` holds the sender persona and the proof points
-(Joblet.ai, the RAG+OKF pipeline, etc.) the compose step chooses from per lead.
+`config/positioning.yaml` holds the sender persona and approved proof points
+the compose step can choose from per lead.
 Edit the `pitch`/`best_for` text to match how you'd actually describe each one.
 
 ## 5. Test locally, in order, before touching sending
 
 ```bash
+./scripts/run_scraper.sh  # omit this when importing leads from CSV
 python -m leadgen.pipeline
 ```
 
-This runs discover → research → compose once and exits. Inspect `leadgen.db`
-after each stage (e.g. `sqlite3 leadgen.db "select company, status, email_subject from leads"`)
-for a handful of real companies — check the `research_brief`, `email_subject`,
-`email_body` read right — before wiring up sending.
+The one-shot command discovers, researches, and drafts; it does not send.
+It writes the database snapshot to `leads_output.csv`. The dashboard starts
+the background sender, which automatically sends every `ready_to_send` lead
+during the configured window, provided all required mail and sender settings
+are present. The sender now pauses if provider credentials, sender identity, or
+postal address are missing. Test sending with a controlled recipient first.
 
-To test sending itself, temporarily point `SMTP_FROM_EMAIL`/recipients at a
-personal test inbox (not real leads), then run the full app:
+To test sending itself, use an isolated test lead addressed to your own inbox,
+then run the full app:
 
 ```bash
 uvicorn leadgen.dashboard:app --reload
 ```
 
 Open http://localhost:8000 for the live status dashboard (lead counts by
-status, a table of recent leads/sends). Watch the logs too: batches should be
-3–4 sends, ~10–15 minutes apart, with 20–90s gaps between individual sends in
-a batch.
+status, a table of recent leads/sends); the browser prompts for dashboard
+credentials. Download the current export at `/leads.csv` with the same login.
+Render settings in `render.yaml` run
+one discovery job at a time, target a three-minute start-to-start pipeline
+interval, check for newly drafted messages once a minute, and send at most one
+message every 2–3 minutes, with a daily cap of 15. A scrape can take the full
+three-minute job limit, so the next run starts when the current one completes.
 
 ## 6. Deploy to Render
 
@@ -117,19 +118,22 @@ its public Docker image, internal-only). Push to a GitHub repo and use
 `maps-scraper` automatically via Render's private networking. If you set
 this up manually service-by-service instead, note that Render's internal
 hostname is whatever you actually name the private service (not
-necessarily "maps-scraper") — set `MAPS_SCRAPER_URL=http://<that exact
-name>:10000` on `leadgen` to match.
+necessarily `maps-scraper`) — set `MAPS_SCRAPER_URL=http://<that exact
+name>:10000` on `leadgen` to match. The Blueprint passes host and port; the
+client adds the HTTP scheme automatically.
 
-Either way, fill in the remaining `sync: false` env vars in the Render
+Either way, fill in `OPENROUTER_API_KEY`, `RESEND_API_KEY`,
+`RESEND_FROM_EMAIL`, dashboard credentials, and sender identity in the Render
 dashboard (they're marked secret, not stored in `render.yaml`). Once
 deployed, the dashboard is at the `leadgen` service's Render URL.
+Set `DASHBOARD_USERNAME` and a strong `DASHBOARD_PASSWORD` before opening the
+dashboard. The generated CSV is available at `<service-url>/leads.csv` after
+the first pipeline run.
 
-**Note on the `maps-scraper` service config**: I wrote it against the tool's
-documented CLI flags, but couldn't live-verify it on an actual Render deploy
-(no Docker available to test locally). If that service fails to start,
-check its logs against the image's actual `ENTRYPOINT`/`CMD` — the
-`startCommand` in `render.yaml` may need adjusting. This whole service is
-optional — skip it if `leads_input.csv` covers your needs.
+The web service and scraper both use persistent disks, which Render requires
+a paid service plan for. The worker is part of the web service so it shares
+the same SQLite file; do not scale this service to multiple instances while
+using SQLite.
 
 ## 7. Warm-up and rollout
 
@@ -164,9 +168,11 @@ raise the cap gradually toward steady state.
   messages in the inbox for the recipient's address, which is a heuristic,
   not a proper bounce/DSN parser. Tighten this in `mail_client.check_bounce`
   if bounce volume matters to you.
-- **Reply matching** relies on standard `In-Reply-To`/`References` headers —
-  works with any real mail client's reply, but a reply sent from a client
-  that strips these headers won't be matched.
+- **Resend reply matching is not implemented yet.** Resend returns an API email
+  id, while the current IMAP reply matcher expects an SMTP message id. Replies
+  can go to `RESEND_REPLY_TO`, but the dashboard will not classify them as
+  replied or process STOP until inbound reply handling is added. SMTP mode uses
+  standard `In-Reply-To`/`References` matching.
 - **Follow-ups** are not implemented — `leads.next_action_at` exists for this
   but nothing schedules it yet. Add a follow-up pass in `compose.py`/`sender.py`
   once the base loop is proven out.

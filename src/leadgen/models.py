@@ -15,6 +15,7 @@ class LeadStatus(str, enum.Enum):
     replied = "replied"
     bounced = "bounced"
     unsubscribed = "unsubscribed"
+    not_qualified = "not_qualified"
 
 
 class Lead(Base):

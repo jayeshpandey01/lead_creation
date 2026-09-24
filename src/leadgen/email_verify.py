@@ -19,7 +19,36 @@ import dns.resolver
 logger = logging.getLogger(__name__)
 
 _TIMEOUT_SECONDS = 8
-_PROBE_FROM = "verify@example.com"
+_PROBE_FROM = "cmd.d.plus@gmail.com"
+
+# Tri-state, cached for the lifetime of this process: None = not yet tested.
+# A hosting provider that blocks outbound port 25 blocks it for every
+# destination equally (it's a firewall rule on the egress, not per-domain),
+# so one confirmed timeout/refusal is enough to know every further SMTP
+# verification this process ever does would also time out. Without this,
+# find_best_generic_email pays the full _TIMEOUT_SECONDS on every single
+# prefix, for every single lead, for the entire run -- on a host where the
+# port is blocked, that is pure wasted time with a guaranteed "unknown"
+# result every time.
+_port25_reachable: bool | None = None
+
+
+def _port25_is_reachable(mx_host: str) -> bool:
+    global _port25_reachable
+    if _port25_reachable is not None:
+        return _port25_reachable
+    try:
+        with socket.create_connection((mx_host, 25), timeout=_TIMEOUT_SECONDS):
+            _port25_reachable = True
+    except OSError:
+        _port25_reachable = False
+        logger.warning(
+            "Outbound port 25 appears blocked from this host (tried mx=%s) -- email "
+            "verification will short-circuit to 'unknown' for the rest of this process "
+            "instead of retrying a doomed SMTP handshake per prefix per lead.",
+            mx_host,
+        )
+    return _port25_reachable
 
 
 def _mx_host(domain: str) -> str | None:
@@ -41,6 +70,9 @@ def check_email(email: str) -> str:
     mx_host = _mx_host(domain)
     if not mx_host:
         return "invalid"  # domain has no mail server at all — safe to reject
+
+    if not _port25_is_reachable(mx_host):
+        return "unknown"
 
     try:
         with smtplib.SMTP(timeout=_TIMEOUT_SECONDS) as smtp:

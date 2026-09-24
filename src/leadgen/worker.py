@@ -1,10 +1,9 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from .compose import run_compose
 from .discover import run_discovery
+from .export_csv import export_leads_csv
 from .poller import poller_loop
 from .research import run_research
 from .sender import sender_loop
@@ -20,26 +19,26 @@ async def run_pipeline_once() -> dict:
     inserted = await asyncio.to_thread(run_discovery, settings.discovery_batch_size)
     researched = await asyncio.to_thread(run_research)
     composed = await asyncio.to_thread(run_compose)
+    await asyncio.to_thread(export_leads_csv)
     result = {"discovered": inserted, "researched": researched, "composed": composed}
     logger.info("Pipeline run complete: %s", result)
     return result
 
 
 async def pipeline_loop() -> None:
-    """Runs run_pipeline_once() once a day, at settings.pipeline_run_hour
-    (sender's local time), to refill the ready_to_send queue."""
-    tz = ZoneInfo(settings.timezone)
-    while True:
-        now = datetime.now(tz)
-        next_run = now.replace(hour=settings.pipeline_run_hour, minute=0, second=0, microsecond=0)
-        if next_run <= now:
-            next_run += timedelta(days=1)
-        await asyncio.sleep((next_run - now).total_seconds())
+    """Runs immediately and then targets the configured start-to-start cadence.
 
+    A scrape can take up to the scraper's max_time, so the next run starts as
+    soon as the current run finishes if it exceeded the configured interval.
+    """
+    while True:
+        started = asyncio.get_running_loop().time()
         try:
             await run_pipeline_once()
         except Exception:
-            logger.exception("Scheduled pipeline run failed, will retry tomorrow")
+            logger.exception("Pipeline run failed; retrying on the next interval")
+        elapsed = asyncio.get_running_loop().time() - started
+        await asyncio.sleep(max(0, settings.pipeline_interval_seconds - elapsed))
 
 
 _background_tasks: list[asyncio.Task] = []

@@ -1,33 +1,61 @@
 sender:
-  name: "Jayesh Pandey"
-  title: "Founder"
+  name: "Jayesh J. Pandey"
+  title: "Founder and AI/ML Engineer"
   company: "Copys"
-  calendly_or_reply_cta: "happy to send a quick example if useful — no pressure either way"
+  portfolio_url: "https://copys-client.vercel.app"
+  company_offer: >
+    Copys builds AI agents, full-stack web systems, and mobile applications.
+    The portfolio states that the studio has launched 30+ production-level websites.
+  calendly_or_reply_cta: "Would a short conversation about a specific build be useful?"
 
-# The compose step gives the LLM this whole list and lets it pick the ONE
-# most relevant proof point per lead, based on the lead's research brief.
+# Each personal result below is explicitly attributed to its résumé role or
+# project. The model must preserve that attribution and can select at most one.
 proof_points:
-  - name: "RAG + Open Knowledge Format engine"
+  - name: "Production AI/ML services — PGAGI"
+    email_claim: "At PGAGI, I deployed ML and GenAI APIs serving 50K+ requests a day, with sub-120ms latency and 99.9% reliability."
     pitch: >
-      built a production RAG pipeline (LangChain, FAISS) that normalizes messy
-      data into a schema-consistent format, cutting hallucinations 35% and
-      improving retrieval precision 40%
-    best_for: "companies with internal docs/knowledge bases, support or search products, messy unstructured data"
+      In my AI/ML role at PGAGI, I deployed ML and GenAI API services on AWS
+      handling 50K+ requests per day, with sub-120ms latency and 99.9% reliability.
+    best_for: "A prospect's public evidence explicitly describes a production ML/GenAI service or a high-throughput API project."
 
-  - name: "Joblet.ai"
+  - name: "RAG and OKF pipeline — PGAGI"
+    email_claim: "At PGAGI, my RAG/OKF pipeline improved retrieval precision by 40% and reduced hallucinations by 35%."
     pitch: >
-      shipped AI-powered matching features (resume-based recommendations, an
-      AI interview assistant) for a job platform used across 100+ countries
-    best_for: "marketplaces, matching/recommendation products, HR tech, consumer platforms"
+      At PGAGI, I built a LangChain and FAISS RAG pipeline using Open Knowledge
+      Format; the résumé reports 40% higher retrieval precision, 35% fewer
+      hallucinations, and 28% lower query latency.
+    best_for: "A prospect's public evidence explicitly describes a knowledge base, retrieval, or document-search product."
 
-  - name: "Production ML deployment experience"
+  - name: "LLMOps evaluation — EaseMeMed"
+    email_claim: "At EaseMeMed, my LLMOps work reduced inference latency by 68% and memory use by 45%."
     pitch: >
-      personally built and deployed ML/GenAI microservices on AWS handling
-      50K+ daily requests at sub-120ms latency with 99.9% reliability
-    best_for: "companies needing to productionize an ML/AI feature reliably at scale"
+      During my LLMOps internship at EaseMeMed, prompt iteration and offline
+      evaluation work reduced memory use by 45% and inference latency by 68%.
+    best_for: "A prospect's public evidence explicitly describes an LLM feature, inference workflow, or model-performance project."
 
-  - name: "QHBERT quantum-hybrid model"
+  - name: "Telemetry analytics — PRL/ISRO"
+    email_claim: "At PRL/ISRO, offline evaluation brought telemetry signal extraction accuracy to 94.2%."
     pitch: >
-      research work compressing a transformer's parameters ~2200x while
-      hitting 98.85% F1 on fake-news detection
-    best_for: "companies interested in model efficiency, compression, or ML research credibility"
+      In my project trainee role at PRL/ISRO, offline evaluation brought
+      satellite-telemetry signal extraction accuracy to 94.2%, and automated
+      ingestion pipelines increased dataset throughput 3.2x.
+    best_for: "A prospect's public evidence explicitly describes sensor, telemetry, or noisy time-series data."
+
+  - name: "Product analytics — BTechNotes"
+    email_claim: "At BTechNotes, I helped grow a student platform to 100K+ active users and 1M+ views."
+    pitch: >
+      As founder and product analytics lead at BTechNotes, I helped grow the
+      student platform to 100K+ active users and 1M+ views using web-telemetry
+      and statistical analysis.
+    best_for: "A prospect's public evidence explicitly describes a user-facing platform, product analytics, or growth measurement."
+
+  - name: "QHBERT research project"
+    email_claim: "In my QHBERT research project, an 8-qubit model achieved 98.85% F1 across four datasets."
+    pitch: >
+      In my QHBERT research project, an 8-qubit hybrid model reduced trainable
+      parameters from 110M to about 50K and achieved 98.85% F1 across four
+      fake-news datasets. This was research, not a production customer deployment.
+    best_for: "A prospect's public evidence explicitly describes ML research or model-compression work."
+
+company_source: "https://copys-client.vercel.app"
+resume_source: "User-provided résumé text; context only, never attach or send."

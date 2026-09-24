@@ -1,14 +1,13 @@
-"""One-shot discover -> research -> compose run, for local testing or manual triggering.
+"""One-shot discover -> research -> compose run; this command does not send.
 
-The production worker (worker.py) runs this same sequence on a daily timer
-internally instead of via a separate cron job, since Render Cron Jobs can't
-have a persistent disk attached and outfind needs one for its local state.
+The dashboard/worker runs sending separately after drafts reach ready_to_send.
 """
 import logging
 import os
 
 from .compose import run_compose
 from .discover import run_discovery
+from .export_csv import export_leads_csv
 from .research import run_research
 
 
@@ -24,6 +23,7 @@ def main() -> None:
 
     composed = run_compose()
     logging.info("compose: %d emails drafted", composed)
+    export_leads_csv()
 
 
 if __name__ == "__main__":

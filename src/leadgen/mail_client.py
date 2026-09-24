@@ -5,6 +5,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.utils import formataddr, make_msgid
 
+import requests
+
 from .settings import settings
 
 logger = logging.getLogger(__name__)
@@ -20,8 +22,32 @@ def build_footer() -> str:
 
 
 def send_email(to_email: str, subject: str, body: str) -> str:
-    """Sends via SMTP using the configured mailbox. Returns the Message-ID we
-    generated, so replies can be matched to it later via IMAP."""
+    """Send through the configured provider and return its delivery id."""
+    if settings.mail_provider == "resend":
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {settings.resend_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": formataddr((settings.sender_name, settings.resend_from_email)),
+                "to": [to_email],
+                "subject": subject,
+                "text": body.rstrip() + build_footer(),
+                **({"reply_to": [settings.resend_reply_to]} if settings.resend_reply_to else {}),
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        try:
+            return response.json()["id"]
+        except (KeyError, TypeError) as exc:
+            raise RuntimeError("Resend returned no email id") from exc
+
+    if settings.mail_provider != "smtp":
+        raise RuntimeError(f"Unsupported MAIL_PROVIDER: {settings.mail_provider}")
+
     message_id = make_msgid()
     msg = MIMEText(body.rstrip() + build_footer())
     msg["To"] = to_email
@@ -40,7 +66,7 @@ def send_email(to_email: str, subject: str, body: str) -> str:
 
 def _imap_connect() -> imaplib.IMAP4_SSL:
     imap = imaplib.IMAP4_SSL(settings.imap_host)
-    imap.login(settings.smtp_from_email, settings.smtp_password)
+    imap.login(settings.imap_username, settings.imap_password)
     imap.select("INBOX")
     return imap
 

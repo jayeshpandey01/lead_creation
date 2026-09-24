@@ -5,6 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .db import get_session, init_db
+from .export_csv import export_leads_csv
 from .mail_client import send_email
 from .models import Lead, LeadStatus
 from .settings import settings
@@ -23,9 +24,30 @@ def _sent_today_count(session) -> int:
     start_of_day = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
     return (
         session.query(Lead)
-        .filter(Lead.status == LeadStatus.sent, Lead.sent_at >= start_of_day)
+        .filter(Lead.sent_at >= start_of_day)
         .count()
     )
+
+
+def _sender_config_missing() -> list[str]:
+    if settings.mail_provider == "resend":
+        required = {
+            "RESEND_API_KEY": settings.resend_api_key,
+            "RESEND_FROM_EMAIL": settings.resend_from_email,
+        }
+    elif settings.mail_provider == "smtp":
+        required = {
+            "SMTP_FROM_EMAIL": settings.smtp_from_email,
+            "SMTP_PASSWORD": settings.smtp_password,
+        }
+    else:
+        return [f"MAIL_PROVIDER must be smtp or resend (got {settings.mail_provider!r})"]
+    required.update({
+        "SENDER_NAME": settings.sender_name,
+        "SENDER_COMPANY": settings.sender_company,
+        "SENDER_ADDRESS": settings.sender_address,
+    })
+    return [name for name, value in required.items() if not value.strip()]
 
 
 def _pick_batch(session, size: int) -> list[Lead]:
@@ -56,6 +78,7 @@ async def _send_one(session, lead: Lead) -> None:
     lead.message_id = message_id
     session.add(lead)
     session.commit()
+    export_leads_csv()
     logger.info("Sent to %s (%s)", lead.email, lead.company)
 
 
@@ -64,6 +87,12 @@ async def sender_loop() -> None:
     tz = ZoneInfo(settings.timezone)
 
     while True:
+        missing = _sender_config_missing()
+        if missing:
+            logger.error("Sender disabled; configure required settings: %s", ", ".join(missing))
+            await asyncio.sleep(settings.sender_idle_poll_seconds)
+            continue
+
         now = datetime.now(tz)
         if not _within_sending_window(now):
             logger.info("Outside sending window at %s, sleeping 15 min", now.isoformat())
@@ -84,8 +113,8 @@ async def sender_loop() -> None:
             )
             batch = _pick_batch(session, batch_size)
             if not batch:
-                logger.info("No leads ready to send, sleeping 10 min")
-                await asyncio.sleep(10 * 60)
+                logger.info("No leads ready to send, checking again in %ds", settings.sender_idle_poll_seconds)
+                await asyncio.sleep(settings.sender_idle_poll_seconds)
                 continue
 
             for i, lead in enumerate(batch):

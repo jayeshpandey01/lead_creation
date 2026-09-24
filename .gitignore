@@ -7,3 +7,4 @@ venv/
 client_secret*.json
 *.db
 *.sqlite3
+leads_output.csv

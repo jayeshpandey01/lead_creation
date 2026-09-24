@@ -1,8 +1,8 @@
-"""Free discovery path: a list of candidate companies (from either a local
-CSV file or a live gosom/google-maps-scraper service, see _load_rows below)
-+ a local SMTP verifier for resolving an email per company. No paid account
-needed. Always-on baseline discovery source — see discover.py for how this
-combines with discover_apollo.py."""
+"""Find candidate companies from the local CSV or Maps scraper.
+
+The pipeline uses the scraper's email extraction and a local SMTP verifier
+for candidate addresses. Apollo is not part of the active pipeline.
+"""
 import csv
 import logging
 import os
@@ -16,6 +16,7 @@ from .models import Lead, LeadStatus
 from .settings import settings
 
 logger = logging.getLogger(__name__)
+_query_index = 0
 
 
 def _load_queries() -> list[str]:
@@ -53,9 +54,10 @@ def _domain_from_website(website: str) -> str | None:
 
 
 def _resolve_email(row: dict, domain: str | None) -> str | None:
-    existing = (row.get("email") or "").strip()
-    if existing and "@" in existing:
-        return existing
+    listed = row.get("email") or row.get("emails") or ""
+    match = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", listed, re.IGNORECASE)
+    if match:
+        return match.group(0).lower()
     if not domain:
         return None
     return find_best_generic_email(domain, settings.generic_email_prefixes)
@@ -66,14 +68,34 @@ def _iter_sources():
     early once it has enough leads without running unnecessary live-scraper
     jobs. Prefers a local CSV (settings.maps_csv_path) if one exists — no
     service to host at all. Falls back to querying the live maps-scraper
-    API per line in settings.queries_file if no CSV is present."""
+    API per line in settings.queries_file if no CSV is present.
+
+    The live path submits one rotating query per pipeline cycle to keep each
+    scheduled discovery run bounded."""
     csv_rows = _load_rows_from_csv()
     if csv_rows is not None:
         yield f"manual CSV ({settings.maps_csv_path})", csv_rows
         return
 
-    for query in _load_queries():
-        yield query, maps_client.run_query(query)
+    if not maps_client.is_available():
+        logger.warning(
+            "No CSV leads found and Maps scraper is unavailable; discovery skipped. "
+            "Start it with ./scripts/run_scraper.sh, or add rows to %s.",
+            settings.maps_csv_path,
+        )
+        return
+
+    global _query_index
+    queries = _load_queries()
+    if not queries:
+        return
+
+    # One bounded scraper job per cycle. Rotate across configured searches so
+    # a large query file doesn't turn a three-minute worker interval into a
+    # long serial queue or repeatedly hit only its first line.
+    query = queries[_query_index % len(queries)]
+    _query_index = (_query_index + 1) % len(queries)
+    yield query, maps_client.run_query(query)
 
 
 def run_discovery_maps(count: int) -> int:
@@ -126,7 +148,13 @@ def run_discovery_maps(count: int) -> int:
                     )
                 )
                 inserted += 1
-        session.commit()
+
+            # Commit after each source rather than once at the very end --
+            # if a later source raises (network error, bad data, etc.),
+            # leads already found from earlier sources this run are kept
+            # instead of being rolled back by session.close() with them
+            # still pending.
+            session.commit()
     finally:
         session.close()
 

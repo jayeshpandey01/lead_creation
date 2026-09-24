@@ -1,10 +1,12 @@
 import json
 import logging
+import re
 from pathlib import Path
 
 import yaml
 
 from .db import get_session
+from .llm_client import chat_completion
 from .models import Lead, LeadStatus
 from .settings import settings
 from .spamcheck import spam_score_issues
@@ -13,27 +15,25 @@ logger = logging.getLogger(__name__)
 
 _POSITIONING_PATH = Path(__file__).resolve().parents[2] / "config" / "positioning.yaml"
 
-_SYSTEM_PROMPT_TEMPLATE = """You are {sender_name}, a {sender_title} at {sender_company}, writing a SHORT, casual cold email to a prospect.
+_SYSTEM_PROMPT_TEMPLATE = """You are {sender_name}, {sender_title} at {sender_company}, writing a short, specific email on behalf of Copys.
 
 Rules:
-- Under 120 words.
-- One specific observation about their company, drawn only from the research brief given below — never invent facts.
-- Reference exactly ONE proof point from the list below, whichever is most relevant to this prospect. Do not list several.
-- Soft, low-friction call to action ({cta}).
-- Plain, human tone. No marketing jargon, no exclamation points, no bold claims, at most one link total.
-- Vary your opening line — do not default to "I noticed that" or "I came across".
-- If no contact name is given, address the company/team generally (e.g. "Hi there," or "Hi {{company}} team,") — never invent a person's name.
-- Output ONLY valid JSON of the form {{"subject": "...", "body": "..."}}. No markdown fences, no commentary.
+- Use 90 words or fewer. Do not add filler praise or generic sales language.
+- Only mention prospect details stated in the research brief. Do not guess needs, pain points, plans, technologies, or outcomes.
+- Include one exact, meaningful `evidence_quote` copied from the research brief in the body. If no relevant quote supports a real connection to Copys' services, return `{{"skip":true,"reason":"..."}}`.
+- Copys builds AI agents, full-stack web systems, and mobile apps. Do not invent other Copys services, customers, or results.
+- Use no more than one personal `email_claim` below, exactly as written and with its role/project attribution intact. Do not combine claims or change any metric. Set `proof_point` to its exact name. If none fits, use `proof_point`: "none".
+- Keep the distinction between the sender's own work at PGAGI, EaseMeMed, PRL/ISRO, BTechNotes, or a research project and work delivered by Copys. Never imply those organizations are Copys clients.
+- Use a low-pressure call to action ({cta}). No exclamation marks, fabricated personalization, invented contact names, guarantees, or unsupported metrics.
+- Return ONLY valid JSON with keys `skip`, `subject`, `body`, `evidence_quote`, and `proof_point`. For a draft, `skip` must be false. No Markdown fences or commentary.
 
-Available proof points:
+Copys portfolio:
+{portfolio_url}
+Portfolio-described offer: {company_offer}
+
+Approved personal claims (use at most one, verbatim):
 {proof_points}
 """
-
-
-def _get_llm_client():
-    from trainiq import cmddllm
-
-    return cmddllm(api_key=settings.trainiq_api_key)
 
 
 def _load_positioning() -> dict:
@@ -42,16 +42,21 @@ def _load_positioning() -> dict:
 
 
 def _format_proof_points(items: list[dict]) -> str:
-    return "\n".join(f"- {p['name']}: {p['pitch'].strip()} (best for: {p['best_for']})" for p in items)
+    return "\n".join(
+        f"- name: {p['name']}\n  exact email_claim: {p['email_claim']}\n  context: {p['pitch'].strip()}\n  use only when: {p['best_for']}"
+        for p in items
+    )
 
 
-def compose_email(lead: Lead, positioning: dict) -> tuple[str, str]:
+def compose_email(lead: Lead, positioning: dict) -> tuple[str, str] | None:
     sender = positioning["sender"]
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
         sender_name=sender["name"],
         sender_title=sender["title"],
         sender_company=sender["company"],
         cta=sender["calendly_or_reply_cta"],
+        portfolio_url=sender["portfolio_url"],
+        company_offer=sender["company_offer"],
         proof_points=_format_proof_points(positioning["proof_points"]),
     )
     if lead.first_name:
@@ -68,18 +73,45 @@ def compose_email(lead: Lead, positioning: dict) -> tuple[str, str]:
         f"Why they were qualified: {lead.qualification_reason or 'n/a'}"
     )
 
-    client = _get_llm_client()
-    response = client.chat.completions.create(
+    content = chat_completion(
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.9,
     )
-    content = response.choices[0].message.content.strip()
     content = content.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     data = json.loads(content)
-    return data["subject"], data["body"]
+    if data.get("skip") is True:
+        return None
+
+    subject = data.get("subject", "").strip()
+    body = data.get("body", "").strip()
+    evidence_quote = data.get("evidence_quote", "").strip()
+    proof_name = data.get("proof_point", "none")
+    allowed = {point["name"]: point["email_claim"] for point in positioning["proof_points"]}
+
+    if not subject or not body:
+        raise ValueError("Draft must include a subject and body")
+    if len(evidence_quote) < 12 or evidence_quote not in (lead.research_brief or ""):
+        raise ValueError("Draft evidence quote is not present in the verified research brief")
+    if evidence_quote not in body:
+        raise ValueError("Draft body must include its verified evidence quote verbatim")
+    if proof_name != "none" and proof_name not in allowed:
+        raise ValueError("Draft selected an unapproved proof point")
+    if proof_name != "none" and allowed[proof_name] not in body:
+        raise ValueError("Draft changed or omitted its approved personal claim")
+    if len(body.split()) > 90:
+        raise ValueError("Draft body exceeds 90 words")
+    if len(re.findall(r"https?://", body, flags=re.IGNORECASE)) > 1:
+        raise ValueError("Draft body contains more than one link")
+
+    approved_text = evidence_quote + (allowed.get(proof_name, "") if proof_name != "none" else "")
+    numbers_in_body = set(re.findall(r"\d+(?:\.\d+)?%?", subject + " " + body))
+    numbers_approved = set(re.findall(r"\d+(?:\.\d+)?%?", approved_text))
+    if numbers_in_body - numbers_approved:
+        raise ValueError("Draft contains a numeric claim not present in approved source text")
+    return subject, body
 
 
 def run_compose(limit: int = 50, max_attempts: int = 2) -> int:
@@ -96,10 +128,19 @@ def run_compose(limit: int = 50, max_attempts: int = 2) -> int:
         for lead in leads:
             for attempt in range(max_attempts):
                 try:
-                    subject, body = compose_email(lead, positioning)
+                    draft = compose_email(lead, positioning)
                 except Exception:
                     logger.exception("Compose failed for %s (attempt %d)", lead.email, attempt)
                     continue
+
+                if draft is None:
+                    lead.status = LeadStatus.not_qualified
+                    session.add(lead)
+                    session.commit()
+                    logger.info("Skipped draft for lead without a relevant verified fact")
+                    break
+
+                subject, body = draft
 
                 issues = spam_score_issues(subject, body)
                 if not issues:

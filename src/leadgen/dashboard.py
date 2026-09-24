@@ -7,9 +7,11 @@ import html
 import logging
 import secrets
 from collections import Counter
+from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.responses import FileResponse, HTMLResponse
 
 from .db import get_session, init_db
 from .models import Lead, LeadStatus
@@ -19,8 +21,22 @@ from .worker import run_pipeline_once, start_background_tasks
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 app = FastAPI(title="leadgen")
+_basic_auth = HTTPBasic()
 
 _STATUS_ORDER = [s.value for s in LeadStatus]
+
+
+def _require_dashboard_login(credentials: HTTPBasicCredentials = Depends(_basic_auth)) -> None:
+    if not settings.dashboard_username or not settings.dashboard_password:
+        raise HTTPException(status_code=503, detail="Dashboard login is not configured")
+    valid_username = secrets.compare_digest(credentials.username, settings.dashboard_username)
+    valid_password = secrets.compare_digest(credentials.password, settings.dashboard_password)
+    if not (valid_username and valid_password):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid dashboard credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 @app.on_event("startup")
@@ -58,7 +74,7 @@ def _row(lead: Lead) -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-def dashboard() -> str:
+def dashboard(_: None = Depends(_require_dashboard_login)) -> str:
     session = get_session()
     try:
         leads = session.query(Lead).order_by(Lead.updated_at.desc()).limit(100).all()
@@ -99,3 +115,11 @@ def dashboard() -> str:
   </table>
 </body>
 </html>"""
+
+
+@app.get("/leads.csv", dependencies=[Depends(_require_dashboard_login)])
+def download_leads_csv() -> FileResponse:
+    path = Path(settings.leads_export_csv_path).expanduser()
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Lead export has not been generated yet")
+    return FileResponse(path, media_type="text/csv", filename="leads_output.csv")
