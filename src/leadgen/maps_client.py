@@ -1,7 +1,7 @@
-"""Thin client for gosom/google-maps-scraper's REST API (run as its own
-service — see the `maps-scraper` entry in render.yaml). No API key: it
-scrapes Google Maps directly and can extract website emails. Used to turn a
-plain-text search query into candidate companies.
+"""Thin client for gosom/google-maps-scraper's REST API (run alongside the
+app in the Render container, or separately for local development). No API
+key: it scrapes Google Maps directly and can extract website emails. Used to
+turn a plain-text search query into candidate companies.
 """
 import logging
 import time

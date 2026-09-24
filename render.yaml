@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: leadgen
-    runtime: python
+    name: lead-creation-tem2
+    runtime: docker
     plan: starter
-    buildCommand: pip install -e .
-    startCommand: uvicorn leadgen.dashboard:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     disk:
       # Holds the SQLite leads db so it survives restarts/deploys without a
       # separate managed database service.
@@ -27,10 +27,7 @@ services:
       - key: TRIGGER_TOKEN
         sync: false
       - key: MAPS_SCRAPER_URL
-        fromService:
-          name: maps-scraper
-          type: pserv
-          property: hostport
+        value: http://127.0.0.1:8080
       - key: MAIL_PROVIDER
         value: resend
       - key: RESEND_API_KEY
@@ -69,22 +66,3 @@ services:
         value: "180"
       - key: SENDER_TIMEZONE
         value: "Asia/Kolkata"
-
-  # Runs gosom/google-maps-scraper (github.com/gosom/google-maps-scraper) as
-  # an internal-only service. No public URL, no API key — the leadgen web
-  # service reaches it over Render's private network at MAPS_SCRAPER_URL.
-  # NOTE: best-effort config based on the tool's documented CLI flags —
-  # not live-verified against a real Render deploy (no Docker available in
-  # this dev environment). If the container fails to start, check the
-  # startCommand against the image's actual ENTRYPOINT.
-  - type: pserv
-    name: maps-scraper
-    runtime: image
-    image:
-      url: docker.io/gosom/google-maps-scraper:latest
-    plan: starter
-    startCommand: "-web -addr :10000 -data-folder /var/data"
-    disk:
-      name: maps-scraper-state
-      mountPath: /var/data
-      sizeGB: 1

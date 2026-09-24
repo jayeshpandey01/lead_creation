@@ -41,12 +41,13 @@ Copy `.env.example` if needed (a starter `.env` is already in this repo) and fil
   changes. The input file and output file are separate.
 - **`DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD`** — required to view the
   dashboard or download its CSV at `/leads.csv`. Keep these credentials private.
-- **`MAPS_SCRAPER_URL`** / **`QUERIES_FILE`** — only matter if
-  `leads_input.csv` is empty/missing. This is the fully-automated path: a
-  `gosom/google-maps-scraper` service searched with one
+- **`MAPS_SCRAPER_URL`** / **`QUERIES_FILE`** — used when
+  `leads_input.csv` is empty/missing. The pipeline searches one
   `"<category> in <location>"` line per line of `QUERIES_FILE`. Locally, run
-  `./scripts/run_scraper.sh` (Docker Desktop must be running) to start it at
-  `http://localhost:8080`, matching the default `MAPS_SCRAPER_URL`.
+  `./scripts/run_scraper.sh` (Docker Desktop must be running) to start the
+  scraper at `http://localhost:8080`, matching the default URL. On Render,
+  the scraper runs in the same container as the app and is reached at
+  `http://127.0.0.1:8080`.
 - **`GENERIC_EMAIL_PREFIXES`** — tried in order against a company's domain
   when a row doesn't list an email directly (e.g. `info`, `hello`, `contact`).
 - **`SMTP_*`** / **`IMAP_*`** / **`SENDER_*`** — see step 3.
@@ -102,38 +103,37 @@ three-minute job limit, so the next run starts when the current one completes.
 
 ## 6. Deploy to Render
 
-```bash
-git init && git add -A && git commit -m "Initial leadgen scaffold"
-```
+The Render Blueprint builds one Docker web service. Its container starts the
+Google Maps scraper on port 8080 inside the container, waits for its API to
+be ready, then starts the lead app on Render's `$PORT`. The scraper is not a
+separate Render service and needs no internal hostname or private service.
+When `leads_input.csv` has no data rows, the worker runs the searches from
+`queries.txt`; otherwise it imports the CSV rows. The scraper and app share
+the same container and persistent disk.
 
-**If you're using `leads_input.csv`** (the simple path), you only need the
-`leadgen` web service — deploy it however you like (manually in the Render
-UI, or via Blueprint using just that one service from `render.yaml`). No
-second service, no Docker, nothing else to host.
-
-**If you want the fully-automated live-scraper path instead**, `render.yaml`
-also defines a `maps-scraper` service (Google Maps scraper, deployed from
-its public Docker image, internal-only). Push to a GitHub repo and use
-**New → Blueprint** to deploy both at once — `leadgen` then reaches
-`maps-scraper` automatically via Render's private networking. If you set
-this up manually service-by-service instead, note that Render's internal
-hostname is whatever you actually name the private service (not
-necessarily `maps-scraper`) — set `MAPS_SCRAPER_URL=http://<that exact
-name>:10000` on `leadgen` to match. The Blueprint passes host and port; the
-client adds the HTTP scheme automatically.
+Before syncing the Blueprint, check that the existing Render service's exact
+name is `lead-creation-tem2`, which is the name currently set in
+`render.yaml`. Render uses this name to match a Blueprint resource to an
+existing service. If the name differs, change the YAML name to the exact
+existing service name before syncing, to avoid creating a second web service.
+Push this repo to GitHub, then use **New → Blueprint** or sync the existing
+Blueprint so Render builds the Dockerfile. Do not create a separate
+`maps-scraper` service.
 
 Either way, fill in `OPENROUTER_API_KEY`, `RESEND_API_KEY`,
 `RESEND_FROM_EMAIL`, dashboard credentials, and sender identity in the Render
 dashboard (they're marked secret, not stored in `render.yaml`). Once
-deployed, the dashboard is at the `leadgen` service's Render URL.
+deployed, the dashboard is at the existing service's Render URL.
 Set `DASHBOARD_USERNAME` and a strong `DASHBOARD_PASSWORD` before opening the
 dashboard. The generated CSV is available at `<service-url>/leads.csv` after
 the first pipeline run.
 
-The web service and scraper both use persistent disks, which Render requires
-a paid service plan for. The worker is part of the web service so it shares
-the same SQLite file; do not scale this service to multiple instances while
-using SQLite.
+The persistent disk keeps the lead database, CSV export, and scraper job
+data across restarts. Render persistent disks require a paid service plan.
+The scraper browser and Python app share one service's memory and CPU; if the
+service runs out of memory, reduce scrape depth/activity or move up to a
+larger plan. The worker and API share one SQLite file, so do not scale this
+service to multiple instances.
 
 ## 7. Warm-up and rollout
 
