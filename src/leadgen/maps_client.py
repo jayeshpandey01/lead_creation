@@ -4,6 +4,7 @@ key: it scrapes Google Maps directly and can extract website emails. Used to
 turn a plain-text search query into candidate companies.
 """
 import logging
+import os
 import time
 
 import requests
@@ -11,6 +12,12 @@ import requests
 from .settings import settings
 
 logger = logging.getLogger(__name__)
+
+if settings.maps_scraper_url != os.environ.get("MAPS_SCRAPER_URL", "http://localhost:8080").strip():
+    logger.info(
+        "Using bundled Maps scraper at %s (overriding retired MAPS_SCRAPER_URL)",
+        settings.maps_scraper_url,
+    )
 
 _POLL_INTERVAL_SECONDS = 5
 _POLL_TIMEOUT_SECONDS = 600

@@ -19,6 +19,19 @@ def _list(name: str, sep: str = ",") -> list[str]:
     return [item.strip() for item in raw.split(sep) if item.strip()]
 
 
+def _maps_scraper_url() -> str:
+    """Read the scraper endpoint, correcting the retired Render hostname.
+
+    The current Render deployment runs the scraper inside the app container.
+    Older deployments may retain the former private-service URL in their
+    dashboard environment, which cannot resolve after that service is removed.
+    """
+    configured = os.environ.get("MAPS_SCRAPER_URL", "http://localhost:8080").strip()
+    if configured.rstrip("/").lower() == "http://maps-scraper:10000":
+        return "http://127.0.0.1:8080"
+    return configured or "http://localhost:8080"
+
+
 @dataclass(frozen=True)
 class Settings:
     database_url: str = field(default_factory=lambda: os.environ.get("DATABASE_URL", "sqlite:///./leadgen.db"))
@@ -26,7 +39,7 @@ class Settings:
     openrouter_model: str = field(default_factory=lambda: os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini"))
 
     # Discovery: self-hosted gosom/google-maps-scraper + local email checks.
-    maps_scraper_url: str = field(default_factory=lambda: os.environ.get("MAPS_SCRAPER_URL", "http://localhost:8080"))
+    maps_scraper_url: str = field(default_factory=_maps_scraper_url)
     queries_file: str = field(default_factory=lambda: os.environ.get("QUERIES_FILE", "queries.txt"))
     # If this file exists, it's used instead of calling the live maps-scraper
     # API — no service to host at all. Same columns as the scraper's own CSV

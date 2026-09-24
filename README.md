@@ -116,9 +116,12 @@ name is `lead-creation-tem2`, which is the name currently set in
 `render.yaml`. Render uses this name to match a Blueprint resource to an
 existing service. If the name differs, change the YAML name to the exact
 existing service name before syncing, to avoid creating a second web service.
-Push this repo to GitHub, then use **New → Blueprint** or sync the existing
-Blueprint so Render builds the Dockerfile. Do not create a separate
-`maps-scraper` service.
+In the Render service's **Environment** page, also replace any old
+`MAPS_SCRAPER_URL` value with `http://127.0.0.1:8080`; this repository
+recognizes the former `http://maps-scraper:10000` value and redirects it to
+loopback for the combined setup. Push this repo to GitHub, then use
+**New → Blueprint** or sync the existing Blueprint so Render builds the
+Dockerfile. Do not create a separate `maps-scraper` service.
 
 Either way, fill in `OPENROUTER_API_KEY`, `RESEND_API_KEY`,
 `RESEND_FROM_EMAIL`, dashboard credentials, and sender identity in the Render
