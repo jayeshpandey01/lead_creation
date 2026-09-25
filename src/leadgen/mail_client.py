@@ -14,11 +14,10 @@ logger = logging.getLogger(__name__)
 
 def build_footer() -> str:
     company_part = f" | {settings.sender_company}" if settings.sender_company else ""
-    return (
-        f"\n\n--\n{settings.sender_name}{company_part}\n"
-        f"{settings.sender_address}\n"
-        "If you'd rather not hear from me again, just reply STOP and I won't follow up."
-    )
+    lines = [f"{settings.sender_name}{company_part}"]
+    if settings.sender_address:
+        lines.append(settings.sender_address)
+    return "\n\n--\n" + "\n".join(lines)
 
 
 def send_email(to_email: str, subject: str, body: str, idempotency_key: str | None = None) -> str:
