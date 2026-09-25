@@ -3,8 +3,8 @@ name: Lead generation
 on:
   workflow_dispatch:
   schedule:
-    # 09:00, 13:00, and 17:00 in Asia/Kolkata on weekdays (UTC schedule).
-    - cron: "30 3,7,11 * * 1-5"
+    # Run every 5 minutes
+    - cron: "*/5 * * * *"
 
 permissions:
   contents: read
@@ -16,10 +16,10 @@ concurrency:
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     env:
       STORAGE_BACKEND: firestore
-      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || 'leadgendb-eb134' }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       FIRESTORE_LEADS_COLLECTION: leads
       MAPS_SCRAPER_URL: http://127.0.0.1:8080
@@ -28,21 +28,26 @@ jobs:
       QUERIES_FILE: queries.txt
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       OPENROUTER_MODEL: openai/gpt-4o-mini
-      MAIL_PROVIDER: resend
+      MAIL_PROVIDER: ${{ vars.MAIL_PROVIDER || 'smtp' }}
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: "587"
+      SMTP_USE_TLS: "true"
+      SMTP_FROM_EMAIL: ${{ vars.SMTP_FROM_EMAIL || 'copys.client@gmail.com' }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD || 'osbf zpvx wxpo dyjn' }}
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-      RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
-      RESEND_REPLY_TO: ${{ vars.RESEND_REPLY_TO }}
-      SENDER_NAME: ${{ vars.SENDER_NAME }}
-      SENDER_COMPANY: ${{ vars.SENDER_COMPANY }}
-      SENDER_ADDRESS: ${{ vars.SENDER_ADDRESS }}
+      RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL || 'copys.client@gmail.com' }}
+      RESEND_REPLY_TO: ${{ vars.RESEND_REPLY_TO || 'copys.client@gmail.com' }}
+      SENDER_NAME: ${{ vars.SENDER_NAME || 'Jayesh Pandey' }}
+      SENDER_COMPANY: ${{ vars.SENDER_COMPANY || 'Copys' }}
+      SENDER_ADDRESS: ${{ vars.SENDER_ADDRESS || 'Mumbai, India' }}
       ENABLE_EMAIL_SENDING: ${{ vars.ENABLE_EMAIL_SENDING || 'true' }}
       JOB_SEND_LIMIT: "1"
-      SEND_DAILY_CAP: "5"
+      SEND_DAILY_CAP: "100"
       DISCOVERY_BATCH_SIZE: "1"
       SENDER_TIMEZONE: Asia/Kolkata
-      SENDING_HOUR_START: "9"
-      SENDING_HOUR_END: "18"
-      SENDING_WEEKDAYS_ONLY: "true"
+      SENDING_HOUR_START: "0"
+      SENDING_HOUR_END: "24"
+      SENDING_WEEKDAYS_ONLY: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -53,7 +58,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install application
-        run: pip install --no-cache-dir -e .
+        run: pip install --no-cache-dir -e . beautifulsoup4
 
       - name: Check required configuration
         run: |
@@ -63,10 +68,12 @@ jobs:
 
           required = ["FIREBASE_SERVICE_ACCOUNT_JSON", "OPENROUTER_API_KEY"]
           if os.environ.get("ENABLE_EMAIL_SENDING", "false").lower() == "true":
-              required += [
-                  "RESEND_API_KEY", "RESEND_FROM_EMAIL", "SENDER_NAME",
-                  "SENDER_COMPANY", "SENDER_ADDRESS",
-              ]
+              provider = os.environ.get("MAIL_PROVIDER", "smtp").lower()
+              if provider == "resend":
+                  required += ["RESEND_API_KEY", "RESEND_FROM_EMAIL"]
+              elif provider == "smtp":
+                  required += ["SMTP_FROM_EMAIL", "SMTP_PASSWORD"]
+              required += ["SENDER_NAME", "SENDER_COMPANY", "SENDER_ADDRESS"]
           missing = [name for name in required if not os.environ.get(name, "").strip()]
           if missing:
               raise SystemExit("Configure these GitHub Actions secrets/variables: " + ", ".join(missing))
