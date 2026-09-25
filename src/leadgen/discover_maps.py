@@ -148,43 +148,11 @@ def run_discovery_maps(count: int) -> int:
                 if not email:
                     continue
 
-                category = row.get("category") or None
-                phone = row.get("phone") or None
-                address = row.get("address") or None
-                place_id = row.get("place_id") or None
-                rating = None
-                if row.get("rating"):
-                    try:
-                        rating = float(row["rating"])
-                    except (ValueError, TypeError):
-                        pass
-                reviews_count = None
-                rc = row.get("reviews_count") or row.get("reviews")
-                if rc:
-                    try:
-                        reviews_count = int(rc)
-                    except (ValueError, TypeError):
-                        pass
-                latitude = None
-                if row.get("latitude"):
-                    try:
-                        latitude = float(row["latitude"])
-                    except (ValueError, TypeError):
-                        pass
-                longitude = None
-                if row.get("longitude"):
-                    try:
-                        longitude = float(row["longitude"])
-                    except (ValueError, TypeError):
-                        pass
-
-                exists_cond = (Lead.company == company)
-                if email:
-                    exists_cond = exists_cond | (Lead.email == email)
-                if place_id:
-                    exists_cond = exists_cond | (Lead.place_id == place_id)
-
-                exists = session.query(Lead).filter(exists_cond).first()
+                exists = (
+                    session.query(Lead)
+                    .filter((Lead.email == email) | (Lead.company == company))
+                    .first()
+                )
                 if exists:
                     continue
 
@@ -193,17 +161,9 @@ def run_discovery_maps(count: int) -> int:
                         email=email,
                         company=company,
                         website=website or None,
-                        phone=phone,
-                        address=address,
-                        category=category,
-                        rating=rating,
-                        reviews_count=reviews_count,
-                        place_id=place_id,
-                        latitude=latitude,
-                        longitude=longitude,
                         qualification_reason=(
                             f"Found via: \"{source_label}\" "
-                            f"(category: {category or 'n/a'})"
+                            f"(category: {row.get('category') or 'n/a'})"
                         ),
                         status=LeadStatus.discovered,
                     )
