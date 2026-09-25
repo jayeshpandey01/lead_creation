@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -27,9 +28,13 @@ def _maps_scraper_url() -> str:
     dashboard environment, which cannot resolve after that service is removed.
     """
     configured = os.environ.get("MAPS_SCRAPER_URL", "http://localhost:8080").strip()
-    if configured.rstrip("/").lower() == "http://maps-scraper:10000":
+    if not configured:
+        return "http://localhost:8080"
+
+    parsed = urlsplit(configured if "://" in configured else f"http://{configured}")
+    if (parsed.hostname or "").lower() == "maps-scraper":
         return "http://127.0.0.1:8080"
-    return configured or "http://localhost:8080"
+    return configured
 
 
 @dataclass(frozen=True)

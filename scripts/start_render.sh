@@ -4,6 +4,7 @@ set -Eeuo pipefail
 maps_data_folder="${MAPS_SCRAPER_DATA_FOLDER:-/var/data/maps-scraper}"
 mkdir -p "$maps_data_folder"
 
+echo "Starting bundled Google Maps scraper with data folder: $maps_data_folder"
 /usr/local/bin/google-maps-scraper -data-folder "$maps_data_folder" &
 scraper_pid=$!
 app_pid=""
@@ -44,6 +45,8 @@ else:
     raise SystemExit(f"Maps scraper did not become ready at {url}: {last_error}")
 PY
 
+echo "Bundled Google Maps scraper is ready at http://127.0.0.1:8080"
+echo "Starting leadgen web app on port ${PORT:-10000}"
 uvicorn leadgen.dashboard:app --host 0.0.0.0 --port "${PORT:-10000}" &
 app_pid=$!
 

@@ -2,7 +2,9 @@
 # browser/runtime files, then run it beside the Python app in one Render service.
 FROM docker.io/gosom/google-maps-scraper:latest AS maps-scraper
 
-FROM python:3.12-slim
+# Match the Debian release used by the upstream scraper image so Chromium's
+# copied runtime files use the same system-library ABI.
+FROM python:3.12-slim-trixie
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/browsers \
     PLAYWRIGHT_DRIVER_PATH=/opt/ms-playwright-go \

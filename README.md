@@ -107,6 +107,8 @@ The Render Blueprint builds one Docker web service. Its container starts the
 Google Maps scraper on port 8080 inside the container, waits for its API to
 be ready, then starts the lead app on Render's `$PORT`. The scraper is not a
 separate Render service and needs no internal hostname or private service.
+Render checks `/health`; it reports healthy only while the bundled scraper
+API responds.
 When `leads_input.csv` has no data rows, the worker runs the searches from
 `queries.txt`; otherwise it imports the CSV rows. The scraper and app share
 the same container and persistent disk.

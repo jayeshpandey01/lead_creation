@@ -13,9 +13,10 @@ from .settings import settings
 
 logger = logging.getLogger(__name__)
 
-if settings.maps_scraper_url != os.environ.get("MAPS_SCRAPER_URL", "http://localhost:8080").strip():
+configured_maps_url = os.environ.get("MAPS_SCRAPER_URL", "http://localhost:8080").strip()
+if settings.maps_scraper_url != configured_maps_url:
     logger.info(
-        "Using bundled Maps scraper at %s (overriding retired MAPS_SCRAPER_URL)",
+        "Normalized MAPS_SCRAPER_URL to bundled scraper endpoint %s",
         settings.maps_scraper_url,
     )
 
@@ -32,14 +33,15 @@ def _base_url() -> str:
     return url if "://" in url else f"http://{url}"
 
 
-def is_available() -> bool:
+def is_available(log_failures: bool = True, timeout: int = 5) -> bool:
     """Return whether the scraper API responds, without dumping a traceback."""
     try:
-        response = requests.get(f"{_base_url()}/api/v1/jobs", timeout=5)
+        response = requests.get(f"{_base_url()}/api/v1/jobs", timeout=timeout)
         response.raise_for_status()
         return True
     except requests.RequestException as exc:
-        logger.warning("Maps scraper unavailable at %s (%s)", _base_url(), exc)
+        if log_failures:
+            logger.warning("Maps scraper unavailable at %s (%s)", _base_url(), exc)
         return False
 
 

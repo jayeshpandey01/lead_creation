@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import FileResponse, HTMLResponse
 
+from . import maps_client
 from .db import get_session, init_db
 from .models import Lead, LeadStatus
 from .settings import settings
@@ -24,6 +25,14 @@ app = FastAPI(title="leadgen")
 _basic_auth = HTTPBasic()
 
 _STATUS_ORDER = [s.value for s in LeadStatus]
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Render readiness probe: only report healthy when Maps discovery works."""
+    if not maps_client.is_available(log_failures=False, timeout=2):
+        raise HTTPException(status_code=503, detail="Maps scraper unavailable")
+    return {"status": "ok"}
 
 
 def _require_dashboard_login(credentials: HTTPBasicCredentials = Depends(_basic_auth)) -> None:

@@ -5,6 +5,7 @@ services:
     plan: starter
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    healthCheckPath: /health
     disk:
       # Holds the SQLite leads db so it survives restarts/deploys without a
       # separate managed database service.
