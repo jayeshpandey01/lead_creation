@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 30
     env:
       STORAGE_BACKEND: firestore
-      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || 'leadgendb-eb134' }}
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       FIRESTORE_LEADS_COLLECTION: leads
       MAPS_SCRAPER_URL: http://127.0.0.1:8080
@@ -28,16 +28,14 @@ jobs:
       QUERIES_FILE: queries.txt
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       OPENROUTER_MODEL: openai/gpt-4o-mini
-      MAIL_PROVIDER: ${{ vars.MAIL_PROVIDER || 'smtp' }}
-      SMTP_FROM_EMAIL: ${{ vars.SMTP_FROM_EMAIL || 'copys.client@gmail.com' }}
-      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD || 'osbf zpvx wxpo dyjn' }}
+      MAIL_PROVIDER: resend
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-      RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL || 'copys.client@gmail.com' }}
-      RESEND_REPLY_TO: ${{ vars.RESEND_REPLY_TO || 'copys.client@gmail.com' }}
-      SENDER_NAME: ${{ vars.SENDER_NAME || 'Jayesh Pandey' }}
-      SENDER_COMPANY: ${{ vars.SENDER_COMPANY || 'Copys' }}
-      SENDER_ADDRESS: ${{ vars.SENDER_ADDRESS || 'Mumbai, India' }}
-      ENABLE_EMAIL_SENDING: ${{ vars.ENABLE_EMAIL_SENDING || 'false' }}
+      RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
+      RESEND_REPLY_TO: ${{ vars.RESEND_REPLY_TO }}
+      SENDER_NAME: ${{ vars.SENDER_NAME }}
+      SENDER_COMPANY: ${{ vars.SENDER_COMPANY }}
+      SENDER_ADDRESS: ${{ vars.SENDER_ADDRESS }}
+      ENABLE_EMAIL_SENDING: ${{ vars.ENABLE_EMAIL_SENDING || 'true' }}
       JOB_SEND_LIMIT: "1"
       SEND_DAILY_CAP: "5"
       DISCOVERY_BATCH_SIZE: "1"
@@ -55,7 +53,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install application
-        run: pip install --no-cache-dir -e . beautifulsoup4
+        run: pip install --no-cache-dir -e .
 
       - name: Check required configuration
         run: |
@@ -65,12 +63,10 @@ jobs:
 
           required = ["FIREBASE_SERVICE_ACCOUNT_JSON", "OPENROUTER_API_KEY"]
           if os.environ.get("ENABLE_EMAIL_SENDING", "false").lower() == "true":
-              provider = os.environ.get("MAIL_PROVIDER", "smtp").lower()
-              if provider == "resend":
-                  required += ["RESEND_API_KEY", "RESEND_FROM_EMAIL"]
-              elif provider == "smtp":
-                  required += ["SMTP_FROM_EMAIL", "SMTP_PASSWORD"]
-              required += ["SENDER_NAME", "SENDER_COMPANY", "SENDER_ADDRESS"]
+              required += [
+                  "RESEND_API_KEY", "RESEND_FROM_EMAIL", "SENDER_NAME",
+                  "SENDER_COMPANY", "SENDER_ADDRESS",
+              ]
           missing = [name for name in required if not os.environ.get(name, "").strip()]
           if missing:
               raise SystemExit("Configure these GitHub Actions secrets/variables: " + ", ".join(missing))
