@@ -58,6 +58,7 @@ jobs:
       - name: Check required configuration
         run: |
           python - <<'PY'
+          import json
           import os
 
           required = ["FIREBASE_SERVICE_ACCOUNT_JSON", "OPENROUTER_API_KEY"]
@@ -69,6 +70,20 @@ jobs:
           missing = [name for name in required if not os.environ.get(name, "").strip()]
           if missing:
               raise SystemExit("Configure these GitHub Actions secrets/variables: " + ", ".join(missing))
+
+          credential_json = os.environ["FIREBASE_SERVICE_ACCOUNT_JSON"].strip()
+          if len(credential_json) >= 2 and credential_json[0] == credential_json[-1] == "'":
+              credential_json = credential_json[1:-1]
+          try:
+              credential = json.loads(credential_json)
+          except json.JSONDecodeError as exc:
+              raise SystemExit("FIREBASE_SERVICE_ACCOUNT_JSON must contain valid raw JSON") from exc
+          for field in ("project_id", "client_email", "private_key"):
+              if not credential.get(field):
+                  raise SystemExit(f"Firebase service-account JSON is missing {field}")
+          configured_project = os.environ.get("FIREBASE_PROJECT_ID", "").strip()
+          if configured_project and configured_project != credential["project_id"]:
+              raise SystemExit("FIREBASE_PROJECT_ID does not match the service-account JSON")
           PY
 
       - name: Start Maps scraper

@@ -41,7 +41,12 @@ def _get_firestore_client():
     except ValueError:
         options = {"projectId": settings.firebase_project_id} if settings.firebase_project_id else None
         if settings.firebase_service_account_json:
-            info = json.loads(settings.firebase_service_account_json)
+            raw_credentials = settings.firebase_service_account_json.strip()
+            # Accept the same quoted one-line value used in a local .env if
+            # it was copied verbatim into a GitHub Actions secret.
+            if len(raw_credentials) >= 2 and raw_credentials[0] == raw_credentials[-1] == "'":
+                raw_credentials = raw_credentials[1:-1]
+            info = json.loads(raw_credentials)
             cred = credentials.Certificate(info)
             if not options and info.get("project_id"):
                 options = {"projectId": info["project_id"]}
