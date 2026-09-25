@@ -1,9 +1,10 @@
 # leadgen
 
 Automated ICP-based lead discovery, per-lead research, LLM-drafted outreach,
-paced sending, and a live status
-dashboard — all in one Render web service, backed by a SQLite file (no
-external database to manage).
+and paced sending. The production scheduled workflow runs on GitHub Actions
+and stores persistent lead state in Firebase Firestore. Local development can
+use SQLite; a FastAPI dashboard and Render deployment configuration are also
+available for deployments that need them.
 
 Pipeline: `discover` (Google Maps search + local SMTP email verify, both
 free/self-hosted — no paid API) → `research` (site/LinkedIn → brief) →
@@ -15,6 +16,19 @@ rationale.
 
 The active discovery path uses `gosom/google-maps-scraper` and does not call
 Apollo. Apollo support code remains outside the active pipeline.
+
+## CI/CD flow
+
+`.github/workflows/ci.yml` runs on pushes and pull requests. It installs the
+package and checks Python syntax, core imports, and the positioning, query, and
+CSV input files. It does not use production credentials, contact external
+services, scrape leads, or send mail.
+
+After changes are merged to the repository default branch, the scheduled
+`.github/workflows/leadgen.yml` workflow runs the production lead pipeline
+with Firestore and the configured service secrets. You can also start that
+workflow manually from **Actions → Lead generation → Run workflow**. Keep its
+production secrets limited to that workflow's repository/environment settings.
 
 ## Free scheduled deployment: GitHub Actions + Firestore
 
