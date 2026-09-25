@@ -53,11 +53,28 @@ def _domain_from_website(website: str) -> str | None:
     return re.sub(r"^www\.", "", host).lower() or None
 
 
+_IMAGE_OR_ASSET_EXTS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico",
+    ".css", ".js", ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3",
+    ".pdf", ".zip", ".tar", ".gz"
+}
+_INVALID_EMAIL_DOMAINS = {
+    "example.com", "domain.com", "yoursite.com", "mywebsite.com",
+    "sentry.io", "wixpress.com", "cloudflare.com", "gravatar.com"
+}
+
+
 def _resolve_email(row: dict, domain: str | None) -> str | None:
     listed = row.get("email") or row.get("emails") or ""
-    match = re.search(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", listed, re.IGNORECASE)
-    if match:
-        return match.group(0).lower()
+    for candidate in re.findall(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", listed, re.IGNORECASE):
+        candidate = candidate.lower().strip()
+        _, ext = os.path.splitext(candidate)
+        if ext in _IMAGE_OR_ASSET_EXTS:
+            continue
+        c_domain = candidate.split("@")[-1]
+        if c_domain in _INVALID_EMAIL_DOMAINS:
+            continue
+        return candidate
     if not domain:
         return None
     return find_best_generic_email(domain, settings.generic_email_prefixes)
@@ -131,11 +148,43 @@ def run_discovery_maps(count: int) -> int:
                 if not email:
                     continue
 
-                exists = (
-                    session.query(Lead)
-                    .filter((Lead.email == email) | (Lead.company == company))
-                    .first()
-                )
+                category = row.get("category") or None
+                phone = row.get("phone") or None
+                address = row.get("address") or None
+                place_id = row.get("place_id") or None
+                rating = None
+                if row.get("rating"):
+                    try:
+                        rating = float(row["rating"])
+                    except (ValueError, TypeError):
+                        pass
+                reviews_count = None
+                rc = row.get("reviews_count") or row.get("reviews")
+                if rc:
+                    try:
+                        reviews_count = int(rc)
+                    except (ValueError, TypeError):
+                        pass
+                latitude = None
+                if row.get("latitude"):
+                    try:
+                        latitude = float(row["latitude"])
+                    except (ValueError, TypeError):
+                        pass
+                longitude = None
+                if row.get("longitude"):
+                    try:
+                        longitude = float(row["longitude"])
+                    except (ValueError, TypeError):
+                        pass
+
+                exists_cond = (Lead.company == company)
+                if email:
+                    exists_cond = exists_cond | (Lead.email == email)
+                if place_id:
+                    exists_cond = exists_cond | (Lead.place_id == place_id)
+
+                exists = session.query(Lead).filter(exists_cond).first()
                 if exists:
                     continue
 
@@ -144,9 +193,17 @@ def run_discovery_maps(count: int) -> int:
                         email=email,
                         company=company,
                         website=website or None,
+                        phone=phone,
+                        address=address,
+                        category=category,
+                        rating=rating,
+                        reviews_count=reviews_count,
+                        place_id=place_id,
+                        latitude=latitude,
+                        longitude=longitude,
                         qualification_reason=(
                             f"Found via: \"{source_label}\" "
-                            f"(category: {row.get('category') or 'n/a'})"
+                            f"(category: {category or 'n/a'})"
                         ),
                         status=LeadStatus.discovered,
                     )
