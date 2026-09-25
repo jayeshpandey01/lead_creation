@@ -39,6 +39,12 @@ def _maps_scraper_url() -> str:
 
 @dataclass(frozen=True)
 class Settings:
+    storage_backend: str = field(default_factory=lambda: os.environ.get("STORAGE_BACKEND", "sqlite").strip().lower())
+    firebase_project_id: str = field(default_factory=lambda: os.environ.get("FIREBASE_PROJECT_ID", ""))
+    firebase_service_account_json: str = field(default_factory=lambda: os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", ""))
+    firebase_service_account_path: str = field(default_factory=lambda: os.environ.get("FIREBASE_SERVICE_ACCOUNT_PATH", ""))
+    firestore_collection: str = field(default_factory=lambda: os.environ.get("FIRESTORE_LEADS_COLLECTION", "leads"))
+    firestore_metadata_collection: str = field(default_factory=lambda: os.environ.get("FIRESTORE_METADATA_COLLECTION", "_leadgen_metadata"))
     database_url: str = field(default_factory=lambda: os.environ.get("DATABASE_URL", "sqlite:///./leadgen.db"))
     openrouter_api_key: str = field(default_factory=lambda: os.environ.get("OPENROUTER_API_KEY") or os.environ.get("openrouter_api", ""))
     openrouter_model: str = field(default_factory=lambda: os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini"))
@@ -97,6 +103,8 @@ class Settings:
 
     discovery_batch_size: int = field(default_factory=lambda: _int("DISCOVERY_BATCH_SIZE", 1))
     pipeline_interval_seconds: int = field(default_factory=lambda: _int("PIPELINE_INTERVAL_SECONDS", 180))
+    enable_email_sending: bool = field(default_factory=lambda: _bool("ENABLE_EMAIL_SENDING", False))
+    job_send_limit: int = field(default_factory=lambda: _int("JOB_SEND_LIMIT", 1))
 
     # Shared secret for POST /trigger-pipeline (manual test trigger on the
     # dashboard). Empty by default = endpoint refuses all requests.

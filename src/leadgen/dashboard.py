@@ -17,7 +17,7 @@ from . import maps_client
 from .db import get_session, init_db
 from .models import Lead, LeadStatus
 from .settings import settings
-from .worker import run_pipeline_once, start_background_tasks
+from .worker import pipeline_is_running, run_pipeline_once, start_background_tasks
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -64,6 +64,8 @@ async def trigger_pipeline(x_trigger_token: str = Header(default="")) -> dict:
     """
     if not settings.trigger_token or not secrets.compare_digest(x_trigger_token, settings.trigger_token):
         raise HTTPException(status_code=403, detail="Missing or invalid X-Trigger-Token")
+    if pipeline_is_running():
+        raise HTTPException(status_code=409, detail="A pipeline run is already in progress")
 
     asyncio.create_task(run_pipeline_once())
     return {"status": "started"}

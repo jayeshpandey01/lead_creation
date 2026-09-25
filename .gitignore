@@ -5,6 +5,9 @@ venv/
 *.egg-info/
 .env
 client_secret*.json
+*firebase*service-account*.json
+*-firebase-adminsdk-*.json
+serviceAccountKey.json
 *.db
 *.sqlite3
 leads_output.csv

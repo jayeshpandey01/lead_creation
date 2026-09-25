@@ -16,6 +16,68 @@ rationale.
 The active discovery path uses `gosom/google-maps-scraper` and does not call
 Apollo. Apollo support code remains outside the active pipeline.
 
+## Free scheduled deployment: GitHub Actions + Firestore
+
+This repository includes a scheduled workflow at
+`.github/workflows/leadgen.yml`. It runs the Maps scraper and one bounded
+pipeline cycle on a GitHub-hosted runner, then exits. Firestore keeps lead
+state between runs; `leads_output.csv` is uploaded as a short-lived Actions
+artifact. This avoids the Render free service's sleeping/ephemeral-disk limits
+and the current combined Chromium/Python memory pressure.
+
+The schedule starts at 09:00, 13:00, and 17:00 India time on weekdays. GitHub
+may delay scheduled runs. Sending is enabled by default, capped at one lead
+per run and five per day. Add the sender settings and a valid Resend key before
+running it. Set the repository Actions variable `ENABLE_EMAIL_SENDING` to
+`false` to turn sending off. The workflow fails its configuration check if
+required sending credentials or sender details are missing.
+
+### Setup
+
+1. In Firebase Console, create a project and a **Cloud Firestore database** in
+   Standard edition. The no-cost quota is 1 GiB stored data, 50,000 document
+   reads/day, and 20,000 writes/day; quotas and product terms can change.
+2. Create a service account with the minimum Firestore data access needed by
+   the app. Generate its JSON key and store it securely. Do not commit or paste
+   the key into source control or chat.
+3. In the GitHub repository, add Actions secrets named
+   `FIREBASE_SERVICE_ACCOUNT_JSON`, `OPENROUTER_API_KEY`, and `RESEND_API_KEY`.
+   Put the complete service-account JSON in the Firebase secret. Add Actions
+   variables named `FIREBASE_PROJECT_ID`, `RESEND_FROM_EMAIL`,
+   `RESEND_REPLY_TO`, `SENDER_NAME`, `SENDER_COMPANY`, and `SENDER_ADDRESS`.
+   The Firebase project ID is also present in the service account JSON.
+4. Keep the GitHub repository private if you do not want the code public.
+   GitHub Free includes 2,000 Actions minutes/month for private repositories;
+   monitor **Settings → Billing and licensing → Actions**. Standard runner
+   usage is free for public repositories, but a public repo makes the code
+   public. [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+5. Open **Actions → Lead generation → Run workflow**. Review the run log and
+   download its CSV artifact. With the default sending setting, the run may
+   send one newly ready email. Set the `ENABLE_EMAIL_SENDING` Actions variable
+   to `false` if you want a draft-only run. Scheduled runs use the default
+   branch.
+
+Locally, you can use Firestore by setting `STORAGE_BACKEND=firestore`,
+`FIREBASE_PROJECT_ID`, and `FIREBASE_SERVICE_ACCOUNT_JSON` to the complete
+service-account JSON value. Keep it in the ignored `.env` file and out of
+source control; keeping the original key file outside the repository is
+safest. To copy an existing SQLite database first, set those values plus
+`SOURCE_DATABASE_URL=sqlite:///./leadgen.db`, then run
+`python -m leadgen.migrate_sqlite`. The migration can be rerun; it overwrites
+matching Firestore document IDs with the SQLite snapshot.
+
+The Firestore adapter currently preserves the app's small SQLAlchemy query
+surface by filtering streamed lead documents in the runner. This is suitable
+for a small list, but reads grow with the number of stored leads. Before
+scaling beyond a few thousand records, translate these operations to indexed
+Firestore queries and add a migration/backup procedure. Firestore stores the
+source-of-truth state; runner files and uploaded CSV artifacts are temporary.
+
+The workflow uses GitHub Actions rather than hosting the FastAPI dashboard.
+Use the Actions run logs and Firebase Console to monitor this first version.
+Resend and OpenRouter usage are separate from Firebase's free quota, and
+Google Maps scraping volume is intentionally limited to one query per run.
+
 ## 1. Install
 
 ```bash
@@ -80,10 +142,9 @@ python -m leadgen.pipeline
 
 The one-shot command discovers, researches, and drafts; it does not send.
 It writes the database snapshot to `leads_output.csv`. The dashboard starts
-the background sender, which automatically sends every `ready_to_send` lead
-during the configured window, provided all required mail and sender settings
-are present. The sender now pauses if provider credentials, sender identity, or
-postal address are missing. Test sending with a controlled recipient first.
+the background sender, but sending remains disabled unless
+`ENABLE_EMAIL_SENDING=true` and all required sender settings are present. Test
+sending with a controlled recipient first.
 
 To test sending itself, use an isolated test lead addressed to your own inbox,
 then run the full app:
@@ -139,6 +200,17 @@ The scraper browser and Python app share one service's memory and CPU; if the
 service runs out of memory, reduce scrape depth/activity or move up to a
 larger plan. The worker and API share one SQLite file, so do not scale this
 service to multiple instances.
+
+When moving scheduled work to GitHub Actions, disable the Render web service's
+background worker or keep `ENABLE_EMAIL_SENDING=false` there. Do not enable
+sending in both Render and Actions, or the same lead may be contacted twice.
+
+The Render startup command limits the Maps scraper to one concurrent job and
+one Chromium process. This reduces peak memory but cannot guarantee the
+combined workload will fit in 512 MB. If the instance still runs out of
+memory, use a larger web-service plan or switch to CSV imports and run the
+scraper outside this Render instance. Avoid manually triggering a second
+pipeline while one is already running.
 
 ## 7. Warm-up and rollout
 

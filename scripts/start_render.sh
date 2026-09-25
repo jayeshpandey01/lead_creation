@@ -5,7 +5,13 @@ maps_data_folder="${MAPS_SCRAPER_DATA_FOLDER:-/var/data/maps-scraper}"
 mkdir -p "$maps_data_folder"
 
 echo "Starting bundled Google Maps scraper with data folder: $maps_data_folder"
-/usr/local/bin/google-maps-scraper -data-folder "$maps_data_folder" &
+# Chromium workers are memory-heavy. Keep the bundled service to one worker
+# and one browser process so concurrent/manual jobs cannot multiply browsers.
+/usr/local/bin/google-maps-scraper \
+  -c 1 \
+  -browser-pool-size 1 \
+  -pages-per-browser 1 \
+  -data-folder "$maps_data_folder" &
 scraper_pid=$!
 app_pid=""
 

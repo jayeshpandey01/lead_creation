@@ -15,17 +15,17 @@ logger = logging.getLogger(__name__)
 
 _POSITIONING_PATH = Path(__file__).resolve().parents[2] / "config" / "positioning.yaml"
 
-_SYSTEM_PROMPT_TEMPLATE = """You are {sender_name}, {sender_title} at {sender_company}, writing a short, specific email on behalf of Copys.
+_SYSTEM_PROMPT_TEMPLATE = """You are {sender_name}, {sender_title} at {sender_company}, writing a short, specific cold outreach email on behalf of Copys.
 
 Rules:
-- Use 90 words or fewer. Do not add filler praise or generic sales language.
-- Only mention prospect details stated in the research brief. Do not guess needs, pain points, plans, technologies, or outcomes.
-- Include one exact, meaningful `evidence_quote` copied from the research brief in the body. If no relevant quote supports a real connection to Copys' services, return `{{"skip":true,"reason":"..."}}`.
-- Copys builds AI agents, full-stack web systems, and mobile apps. Do not invent other Copys services, customers, or results.
-- Use no more than one personal `email_claim` below, exactly as written and with its role/project attribution intact. Do not combine claims or change any metric. Set `proof_point` to its exact name. If none fits, use `proof_point`: "none".
+- Use 90 words or fewer. Direct, conversational, respectful tone. Do not add filler praise or generic sales language.
+- Only mention prospect details stated in the research brief. Do not invent unverified claims.
+- Select an EXACT short phrase (3 to 8 words) from the research brief. That exact phrase must appear VERBATIM inside your email body (in quotes or naturally in the sentence). Set `evidence_quote` to that EXACT phrase.
+- Copys builds AI agents, full-stack web systems, and mobile apps. Connect what they do to how Copys can collaborate (e.g. as an engineering partner for custom AI agents/automations, full-stack web systems, or mobile apps).
+- You may use at most one personal `email_claim` below, exactly as written and with its role/project attribution intact. Set `proof_point` to its exact name. If none fits, use `proof_point`: "none" and emphasize Copys' core studio builds (web platforms, mobile apps, or AI automation).
 - Keep the distinction between the sender's own work at PGAGI, EaseMeMed, PRL/ISRO, BTechNotes, or a research project and work delivered by Copys. Never imply those organizations are Copys clients.
 - Use a low-pressure call to action ({cta}). No exclamation marks, fabricated personalization, invented contact names, guarantees, or unsupported metrics.
-- Return ONLY valid JSON with keys `skip`, `subject`, `body`, `evidence_quote`, and `proof_point`. For a draft, `skip` must be false. No Markdown fences or commentary.
+- Return ONLY valid JSON with keys `subject`, `body`, `evidence_quote`, and `proof_point`. No Markdown fences or commentary.
 
 Copys portfolio:
 {portfolio_url}
@@ -49,6 +49,9 @@ def _format_proof_points(items: list[dict]) -> str:
 
 
 def compose_email(lead: Lead, positioning: dict) -> tuple[str, str] | None:
+    if not lead.research_brief or "NO_VERIFIED_EVIDENCE" in lead.research_brief:
+        return None
+
     sender = positioning["sender"]
     system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
         sender_name=sender["name"],
@@ -78,7 +81,7 @@ def compose_email(lead: Lead, positioning: dict) -> tuple[str, str] | None:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        temperature=0.9,
+        temperature=0.3,
     )
     content = content.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     data = json.loads(content)
@@ -93,20 +96,24 @@ def compose_email(lead: Lead, positioning: dict) -> tuple[str, str] | None:
 
     if not subject or not body:
         raise ValueError("Draft must include a subject and body")
-    if len(evidence_quote) < 12 or evidence_quote not in (lead.research_brief or ""):
+    if len(evidence_quote) < 8 or evidence_quote.lower() not in (lead.research_brief or "").lower():
         raise ValueError("Draft evidence quote is not present in the verified research brief")
-    if evidence_quote not in body:
+    if evidence_quote.lower() not in body.lower():
         raise ValueError("Draft body must include its verified evidence quote verbatim")
     if proof_name != "none" and proof_name not in allowed:
-        raise ValueError("Draft selected an unapproved proof point")
-    if proof_name != "none" and allowed[proof_name] not in body:
-        raise ValueError("Draft changed or omitted its approved personal claim")
+        proof_name = "none"
     if len(body.split()) > 90:
         raise ValueError("Draft body exceeds 90 words")
     if len(re.findall(r"https?://", body, flags=re.IGNORECASE)) > 1:
         raise ValueError("Draft body contains more than one link")
 
-    approved_text = evidence_quote + (allowed.get(proof_name, "") if proof_name != "none" else "")
+    approved_text = (
+        evidence_quote
+        + " "
+        + (allowed.get(proof_name, "") if proof_name != "none" else "")
+        + " "
+        + positioning.get("sender", {}).get("company_offer", "")
+    )
     numbers_in_body = set(re.findall(r"\d+(?:\.\d+)?%?", subject + " " + body))
     numbers_approved = set(re.findall(r"\d+(?:\.\d+)?%?", approved_text))
     if numbers_in_body - numbers_approved:

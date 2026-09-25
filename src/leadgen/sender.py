@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from .db import get_session, init_db
@@ -67,14 +67,18 @@ def _pick_batch(session, size: int) -> list[Lead]:
 async def _send_one(session, lead: Lead) -> None:
     try:
         message_id = await asyncio.to_thread(
-            send_email, lead.email, lead.email_subject, lead.email_body
+            send_email,
+            lead.email,
+            lead.email_subject,
+            lead.email_body,
+            f"leadgen-outreach/{lead.id}" if settings.mail_provider == "resend" else None,
         )
     except Exception:
         logger.exception("Failed to send to %s, leaving as ready_to_send for retry", lead.email)
         return
 
     lead.status = LeadStatus.sent
-    lead.sent_at = datetime.utcnow()
+    lead.sent_at = datetime.now(timezone.utc)
     lead.message_id = message_id
     session.add(lead)
     session.commit()
@@ -87,6 +91,10 @@ async def sender_loop() -> None:
     tz = ZoneInfo(settings.timezone)
 
     while True:
+        if not settings.enable_email_sending:
+            logger.info("Sender disabled; set ENABLE_EMAIL_SENDING=true to opt in")
+            await asyncio.sleep(settings.sender_idle_poll_seconds)
+            continue
         missing = _sender_config_missing()
         if missing:
             logger.error("Sender disabled; configure required settings: %s", ", ".join(missing))
@@ -128,3 +136,30 @@ async def sender_loop() -> None:
         interval = random.uniform(settings.interval_min_seconds, settings.interval_max_seconds)
         logger.info("Batch done, sleeping %.0fs until next batch", interval)
         await asyncio.sleep(interval)
+
+
+async def send_ready_once(limit: int = 1) -> int:
+    """Send a bounded number of ready drafts in a scheduled one-shot job."""
+    if not settings.enable_email_sending:
+        logger.info("Email sending disabled (ENABLE_EMAIL_SENDING=false)")
+        return 0
+    missing = _sender_config_missing()
+    if missing:
+        raise RuntimeError("Sender is missing required settings: " + ", ".join(missing))
+    now = datetime.now(ZoneInfo(settings.timezone))
+    if not _within_sending_window(now):
+        logger.info("Outside sending window; skipping sends")
+        return 0
+
+    session = get_session()
+    sent = 0
+    try:
+        remaining = max(0, settings.daily_cap - _sent_today_count(session))
+        batch = _pick_batch(session, min(max(limit, 0), remaining))
+        for lead in batch:
+            await _send_one(session, lead)
+            if lead.status == LeadStatus.sent:
+                sent += 1
+    finally:
+        session.close()
+    return sent

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum as SAEnum, String, Text, func
+from sqlalchemy import DateTime, Enum as SAEnum, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -22,16 +22,32 @@ class Lead(Base):
     __tablename__ = "leads"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
 
     first_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     last_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    company: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    company: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     website: Mapped[str | None] = mapped_column(String(500), nullable=True)
     linkedin_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     qualification_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- Google Maps Data (gosom/google-maps-scraper) ---
+    phone: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reviews_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    place_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # --- Copy'S Audit & Opportunity Intelligence (Layers 2, 3, 4) ---
+    opportunity_score: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    audit_data: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recommended_service: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # --- Outreach & Sending ---
     research_brief: Mapped[str | None] = mapped_column(Text, nullable=True)
     email_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     email_body: Mapped[str | None] = mapped_column(Text, nullable=True)

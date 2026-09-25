@@ -1,14 +1,17 @@
-"""One-shot discover -> research -> compose run; this command does not send.
+"""One-shot scheduled discover -> research -> compose -> optional send run.
 
-The dashboard/worker runs sending separately after drafts reach ready_to_send.
+Sending is disabled unless ENABLE_EMAIL_SENDING=true.
 """
 import logging
 import os
+import asyncio
 
 from .compose import run_compose
 from .discover import run_discovery
 from .export_csv import export_leads_csv
 from .research import run_research
+from .sender import send_ready_once
+from .settings import settings
 
 
 def main() -> None:
@@ -23,6 +26,8 @@ def main() -> None:
 
     composed = run_compose()
     logging.info("compose: %d emails drafted", composed)
+    sent = asyncio.run(send_ready_once(limit=settings.job_send_limit))
+    logging.info("send: %d emails sent", sent)
     export_leads_csv()
 
 

@@ -57,5 +57,23 @@ proof_points:
       fake-news datasets. This was research, not a production customer deployment.
     best_for: "A prospect's public evidence explicitly describes ML research or model-compression work."
 
+  - name: "Full-stack web systems — Copys"
+    email_claim: "At Copys, our studio has engineered and launched 30+ production-level web platforms and responsive web systems."
+    pitch: >
+      At Copys, we have engineered and launched 30+ production-level websites and full-stack web platforms for diverse clients.
+    best_for: "A prospect's public evidence explicitly describes website development, web platforms, digital systems, or responsive design."
+
+  - name: "Mobile app engineering — Copys"
+    email_claim: "At Copys, we engineer high-performance iOS and Android mobile applications and cross-platform systems."
+    pitch: >
+      At Copys, we design and deploy native and cross-platform mobile apps with seamless APIs and responsive user interfaces.
+    best_for: "A prospect's public evidence explicitly describes mobile app development, iOS/Android products, or app engineering."
+
+  - name: "AI workflow automation — Copys"
+    email_claim: "At Copys, we build custom AI agents and automated workflows that streamline operations and customer interactions."
+    pitch: >
+      At Copys, we build bespoke AI agents, intelligent scrapers, and workflow automation systems that reduce manual operational overhead.
+    best_for: "A prospect's public evidence explicitly describes workflow automation, operations, chatbots, or AI integrations."
+
 company_source: "https://copys-client.vercel.app"
 resume_source: "User-provided résumé text; context only, never attach or send."

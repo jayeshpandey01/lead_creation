@@ -1,8 +1,11 @@
+import json
 import logging
+from dataclasses import asdict
 
 import requests
 import trafilatura
 
+from .audit import audit_website
 from .db import get_session
 from .llm_client import chat_completion
 from .models import Lead, LeadStatus
@@ -89,6 +92,23 @@ def run_research(limit: int = 50) -> int:
             .all()
         )
         for lead in leads:
+            if lead.website:
+                try:
+                    res = audit_website(
+                        lead.website,
+                        category=getattr(lead, "category", None),
+                        rating=getattr(lead, "rating", None),
+                        reviews_count=getattr(lead, "reviews_count", None),
+                    )
+                    lead.opportunity_score = res.opportunity_score
+                    lead.recommended_service = res.recommended_service
+                    lead.audit_data = json.dumps({
+                        "top_gaps": res.top_gaps,
+                        "details": asdict(res.details),
+                    })
+                except Exception:
+                    logger.warning("Audit failed for %s (%s)", lead.email, lead.website)
+
             website_text = fetch_website_text(lead.website)
             linkedin_text = fetch_linkedin_about(lead.linkedin_url)
             try:
@@ -106,7 +126,7 @@ def run_research(limit: int = 50) -> int:
             session.add(lead)
             session.commit()
             processed += 1
-            logger.info("Researched lead %s (%s)", lead.email, lead.company)
+            logger.info("Researched lead %s (%s) - Score: %s", lead.email, lead.company, lead.opportunity_score)
     finally:
         session.close()
     return processed

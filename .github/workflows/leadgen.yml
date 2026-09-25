@@ -1,0 +1,119 @@
+name: Lead generation
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 09:00, 13:00, and 17:00 in Asia/Kolkata on weekdays (UTC schedule).
+    - cron: "30 3,7,11 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leadgen-production
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STORAGE_BACKEND: firestore
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      FIRESTORE_LEADS_COLLECTION: leads
+      MAPS_SCRAPER_URL: http://127.0.0.1:8080
+      MAPS_CSV_PATH: leads_input.csv
+      LEADS_EXPORT_CSV_PATH: leads_output.csv
+      QUERIES_FILE: queries.txt
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_MODEL: openai/gpt-4o-mini
+      MAIL_PROVIDER: resend
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM_EMAIL: ${{ vars.RESEND_FROM_EMAIL }}
+      RESEND_REPLY_TO: ${{ vars.RESEND_REPLY_TO }}
+      SENDER_NAME: ${{ vars.SENDER_NAME }}
+      SENDER_COMPANY: ${{ vars.SENDER_COMPANY }}
+      SENDER_ADDRESS: ${{ vars.SENDER_ADDRESS }}
+      ENABLE_EMAIL_SENDING: ${{ vars.ENABLE_EMAIL_SENDING || 'true' }}
+      JOB_SEND_LIMIT: "1"
+      SEND_DAILY_CAP: "5"
+      DISCOVERY_BATCH_SIZE: "1"
+      SENDER_TIMEZONE: Asia/Kolkata
+      SENDING_HOUR_START: "9"
+      SENDING_HOUR_END: "18"
+      SENDING_WEEKDAYS_ONLY: "true"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install application
+        run: pip install --no-cache-dir -e .
+
+      - name: Check required configuration
+        run: |
+          python - <<'PY'
+          import os
+
+          required = ["FIREBASE_SERVICE_ACCOUNT_JSON", "OPENROUTER_API_KEY"]
+          if os.environ.get("ENABLE_EMAIL_SENDING", "false").lower() == "true":
+              required += [
+                  "RESEND_API_KEY", "RESEND_FROM_EMAIL", "SENDER_NAME",
+                  "SENDER_COMPANY", "SENDER_ADDRESS",
+              ]
+          missing = [name for name in required if not os.environ.get(name, "").strip()]
+          if missing:
+              raise SystemExit("Configure these GitHub Actions secrets/variables: " + ", ".join(missing))
+          PY
+
+      - name: Start Maps scraper
+        run: |
+          docker run -d --name leadgen-maps-scraper -p 8080:8080 \
+            -v "$RUNNER_TEMP/maps-data:/gmapsdata" \
+            gosom/google-maps-scraper \
+            -web -addr :8080 -data-folder /gmapsdata \
+            -c 1 -browser-pool-size 1 -pages-per-browser 1
+
+      - name: Wait for Maps scraper
+        run: |
+          python - <<'PY'
+          import time
+          import urllib.error
+          import urllib.request
+
+          url = "http://127.0.0.1:8080/api/v1/jobs"
+          deadline = time.monotonic() + 90
+          last_error = None
+          while time.monotonic() < deadline:
+              try:
+                  with urllib.request.urlopen(url, timeout=2) as response:
+                      if 200 <= response.status < 300:
+                          print("Maps scraper is ready")
+                          break
+              except (OSError, urllib.error.URLError) as exc:
+                  last_error = exc
+              time.sleep(1)
+          else:
+              raise SystemExit(f"Maps scraper failed to start: {last_error}")
+          PY
+
+      - name: Run one bounded pipeline cycle
+        run: python -m leadgen.pipeline
+
+      - name: Upload CSV snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: leads-output-${{ github.run_id }}
+          path: leads_output.csv
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop scraper
+        if: always()
+        run: docker rm -f leadgen-maps-scraper || true

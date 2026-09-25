@@ -21,7 +21,7 @@ def build_footer() -> str:
     )
 
 
-def send_email(to_email: str, subject: str, body: str) -> str:
+def send_email(to_email: str, subject: str, body: str, idempotency_key: str | None = None) -> str:
     """Send through the configured provider and return its delivery id."""
     if settings.mail_provider == "resend":
         response = requests.post(
@@ -29,6 +29,7 @@ def send_email(to_email: str, subject: str, body: str) -> str:
             headers={
                 "Authorization": f"Bearer {settings.resend_api_key}",
                 "Content-Type": "application/json",
+                **({"Idempotency-Key": idempotency_key} if idempotency_key else {}),
             },
             json={
                 "from": formataddr((settings.sender_name, settings.resend_from_email)),

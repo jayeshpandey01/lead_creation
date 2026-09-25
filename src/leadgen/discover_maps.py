@@ -10,7 +10,7 @@ import re
 from urllib.parse import urlparse
 
 from . import maps_client
-from .db import get_session
+from .db import get_session, next_discovery_query_index
 from .email_verify import find_best_generic_email
 from .models import Lead, LeadStatus
 from .settings import settings
@@ -85,7 +85,6 @@ def _iter_sources():
         )
         return
 
-    global _query_index
     queries = _load_queries()
     if not queries:
         return
@@ -93,8 +92,13 @@ def _iter_sources():
     # One bounded scraper job per cycle. Rotate across configured searches so
     # a large query file doesn't turn a three-minute worker interval into a
     # long serial queue or repeatedly hit only its first line.
-    query = queries[_query_index % len(queries)]
-    _query_index = (_query_index + 1) % len(queries)
+    if settings.storage_backend == "firestore":
+        query_index = next_discovery_query_index(len(queries))
+    else:
+        global _query_index
+        query_index = _query_index % len(queries)
+        _query_index = (query_index + 1) % len(queries)
+    query = queries[query_index]
     yield query, maps_client.run_query(query)
 
 

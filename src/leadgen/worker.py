@@ -10,19 +10,29 @@ from .sender import sender_loop
 from .settings import settings
 
 logger = logging.getLogger(__name__)
+_pipeline_lock = asyncio.Lock()
+
+
+def pipeline_is_running() -> bool:
+    return _pipeline_lock.locked()
 
 
 async def run_pipeline_once() -> dict:
     """Runs discover -> research -> compose one time. Shared by the daily
     scheduled loop and the manual /trigger-pipeline dashboard endpoint."""
-    logger.info("Running discover/research/compose pipeline")
-    inserted = await asyncio.to_thread(run_discovery, settings.discovery_batch_size)
-    researched = await asyncio.to_thread(run_research)
-    composed = await asyncio.to_thread(run_compose)
-    await asyncio.to_thread(export_leads_csv)
-    result = {"discovered": inserted, "researched": researched, "composed": composed}
-    logger.info("Pipeline run complete: %s", result)
-    return result
+    if _pipeline_lock.locked():
+        logger.info("Pipeline already running; skipping overlapping run")
+        return {"skipped": "pipeline already running"}
+
+    async with _pipeline_lock:
+        logger.info("Running discover/research/compose pipeline")
+        inserted = await asyncio.to_thread(run_discovery, settings.discovery_batch_size)
+        researched = await asyncio.to_thread(run_research)
+        composed = await asyncio.to_thread(run_compose)
+        await asyncio.to_thread(export_leads_csv)
+        result = {"discovered": inserted, "researched": researched, "composed": composed}
+        logger.info("Pipeline run complete: %s", result)
+        return result
 
 
 async def pipeline_loop() -> None:
